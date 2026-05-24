@@ -22,33 +22,69 @@ import { MouvementsCoffre } from '@/pages/MouvementsCoffre';
 import { Utilisateurs } from '@/pages/Utilisateurs';
 import { AuditTrail } from '@/pages/AuditTrail';
 
+// Synthèse = Dashboard (ou tu peux créer une page Synthèse.tsx séparée)
+const Synthese = Dashboard;
+
 export function App() {
   return (
     <Routes>
       <Route element={<Layout />}>
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* PAGES PRINCIPALES */}
+        {/* ═══════════════════════════════════════════════════════════ */}
         <Route path="/" element={<Accueil />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/synthese" element={<Synthese />} />
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* CAISSE ET CLÔTURE */}
+        {/* ═══════════════════════════════════════════════════════════ */}
         <Route path="/caisse" element={<CaisseJour />} />
+        <Route path="/cloture" element={<Cloture />} />
+        <Route path="/clotures-history" element={<ClosureHistory />} />
         <Route path="/journal-journee" element={<JourneeSnapshots />} />
-        <Route path="/reconciliation" element={<Reconciliation />} />
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* OPÉRATIONS */}
+        {/* ═══════════════════════════════════════════════════════════ */}
         <Route path="/transactions" element={<Transactions />} />
+        <Route path="/reliquats" element={<Reliquats />} />
+        <Route path="/mouvements-coffre" element={<MouvementsCoffre />} />
+        <Route path="/journal-caisse" element={<JournalCaisse />} />
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* VÉRIFICATION */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+        <Route path="/reconciliation" element={<Reconciliation />} />
+        <Route path="/cotation" element={<Cotation />} />
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* RAPPORTS */}
+        {/* ═══════════════════════════════════════════════════════════ */}
         <Route path="/stock" element={<Stock />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/credits" element={<Credits />} />
-        <Route path="/reliquats" element={<Reliquats />} />
-        <Route path="/journal-caisse" element={<JournalCaisse />} />
-        <Route path="/mouvements-coffre" element={<MouvementsCoffre />} />
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* CLIENTS */}
+        {/* ═══════════════════════════════════════════════════════════ */}
         <Route path="/clients" element={<Clients />} />
         <Route path="/clients/:id" element={<ClientDetail />} />
-        <Route path="/cloture" element={<Cloture />} />
-        <Route path="/clotures-history" element={<ClosureHistory />} />
-        <Route path="/cotation" element={<Cotation />} />
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* AUDIT */}
+        {/* ═══════════════════════════════════════════════════════════ */}
         <Route path="/audit" element={<AuditJournal />} />
         <Route path="/audit-trail" element={<AuditTrail />} />
+        
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* CONFIGURATION */}
+        {/* ═══════════════════════════════════════════════════════════ */}
         <Route path="/parametres" element={<Parametres />} />
         <Route path="/utilisateurs" element={<Utilisateurs />} />
       </Route>
-
+      
+      {/* Catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
