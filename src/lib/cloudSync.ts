@@ -186,6 +186,11 @@ export async function checkCloudHealth(): Promise<boolean> {
     if (!base) return false;
     const res = await fetch(`${base}/health`);
     if (!res.ok) return false;
+    const ct = res.headers.get('content-type') ?? '';
+    if (!ct.includes('application/json')) {
+      console.warn('[CloudSync] /api/health a renvoyé du HTML — Railway doit lancer "npm run server", pas le site Vite.');
+      return false;
+    }
     const j = (await res.json()) as { status?: string };
     return j.status === 'ok';
   } catch {

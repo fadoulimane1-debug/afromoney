@@ -1,0 +1,7 @@
+# Railway — lancer l’API Express (MongoDB), pas le site Vite (hébergé sur Vercel).
+[build]
+buildCommand = "npm install"
+
+[deploy]
+startCommand = "npm run server"
+restartPolicyType = "ON_FAILURE"
