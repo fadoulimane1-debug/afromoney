@@ -7,7 +7,7 @@ import {
   pullAllFromCloud,
 } from '@/lib/cloudSync';
 
-const SYNC_INTERVAL_MS = 20_000;
+const SYNC_INTERVAL_MS = 45_000;
 
 /**
  * Au chargement : récupère les données MongoDB partagées.

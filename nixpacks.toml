@@ -1,0 +1,13 @@
+# Force Railway à lancer l’API Express (pas le build Vite seul).
+[start]
+cmd = "npm run server"
+
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["npm install"]
+
+# Pas de phase build Vite — le front est sur Vercel.
+[phases.build]
+cmds = []
