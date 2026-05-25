@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { AccueilContactSection } from '@/components/AccueilContactSection';
 import { PageHero } from '@/components/PageHero';
+import { Logo } from '@/components/Logo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   LayoutDashboard,
@@ -82,6 +83,9 @@ export function Accueil() {
 
       <div className="page-content">
         <div className="mx-auto max-w-[1100px]">
+          <div className="mb-6 flex justify-center">
+            <Logo size="md" className="drop-shadow" />
+          </div>
           <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-zinc-600">
             Accès rapides
           </h2>

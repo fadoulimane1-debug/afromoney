@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Zap } from 'lucide-react';
+import { Logo } from '@/components/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -70,10 +71,8 @@ export function Login() {
       <div className="relative w-full max-w-sm space-y-4">
         {/* Logo */}
         <div className="text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 ring-1 ring-blue-200">
-            <span className="text-xl font-bold text-blue-600">A</span>
-          </div>
-          <h1 className="text-2xl font-bold text-zinc-900">AfrоMoney</h1>
+          <Logo size="lg" className="mx-auto mb-3 drop-shadow-md" />
+          <h1 className="text-2xl font-bold text-zinc-900">AFROMONEY</h1>
           <p className="mt-1 text-sm text-zinc-600">Office de change — interface alignée AFROMONEY V8</p>
         </div>
 

@@ -34,7 +34,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { hasMinRole } from '@/lib/permissions';
 import type { Role } from '@/types';
 import { cn } from '@/lib/utils';
-import { MandalaMark } from '@/components/MandalaMark';
+import { Logo } from '@/components/Logo';
 import { NotificationBell } from '@/components/NotificationBell';
 import { RatesBadge } from '@/components/RatesBadge';
 
@@ -204,12 +204,10 @@ function menuIsActive(pathname: string, items: NavLeaf[]) {
 }
 
 /* ── Logo mark ── */
-function Logo() {
+function NavLogo() {
   return (
     <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
-      <div className="relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/90 p-[2px] shadow-md shadow-black/20 ring-1 ring-white/40 sm:h-8 sm:w-8">
-        <MandalaMark className="h-full w-full" plateFill={null} holeFill="#ffffff" />
-      </div>
+      <Logo size="sm" className="drop-shadow-md" />
       <div className="leading-none">
         <p className="text-[12px] font-bold tracking-tight text-white sm:text-[13px]">AFROMONEY</p>
         <p className="mt-0.5 text-[8px] font-medium uppercase tracking-[0.16em] text-white/55 sm:text-[9px]">
@@ -472,7 +470,7 @@ export function Navbar() {
     <header className="afro-navbar">
       <div className="mx-auto flex w-full max-w-[1600px] min-w-0 items-center justify-between gap-2 px-3 py-2 sm:gap-3 sm:px-4 sm:py-2.5">
         <NavLink to="/" className="shrink-0" onClick={() => setMobileOpen(false)} title="Accueil">
-          <Logo />
+          <NavLogo />
         </NavLink>
 
         <nav
