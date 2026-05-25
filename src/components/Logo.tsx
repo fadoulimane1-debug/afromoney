@@ -1,7 +1,8 @@
 const SIZES = {
-  sm: 'w-8 h-8',
-  md: 'w-14 h-14',
-  lg: 'w-28 h-28',
+  sm:  'w-8 h-8',
+  nav: 'w-12 h-12',
+  md:  'w-14 h-14',
+  lg:  'w-28 h-28',
 } as const;
 
 interface LogoProps {
