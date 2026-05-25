@@ -73,8 +73,18 @@ app.use(express.json());
 
 // ── Health check ──────────────────────────────────────────────────────────────
 
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', db: db ? 'connected' : 'disconnected' });
+app.get('/api/health', async (_req, res) => {
+  try {
+    await getDb();
+    res.json({ status: 'ok', db: 'connected' });
+  } catch (err) {
+    res.json({
+      status: 'ok',
+      db: 'disconnected',
+      hint: 'Ajoutez MONGODB_URI dans Railway → Variables',
+      error: err.message,
+    });
+  }
 });
 
 /** Racine : rappel que l’interface est sur Vercel (évite la confusion avec le build Vite). */
