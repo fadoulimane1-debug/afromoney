@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { PageHero } from '@/components/PageHero';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
@@ -56,6 +56,8 @@ import {
   drawPdfPageFrame,
 } from '@/lib/exportStyled';
 import { getTransactions } from '@/lib/storage';
+import { calculateSoldes } from '@/services/supabaseService';
+import type { SoldesResult } from '@/services/supabaseService';
 import { fmt, fmtPct, fmtNumber } from '@/lib/formatNumbers';
 
 dayjs.locale('fr');
@@ -221,6 +223,10 @@ function PivotSection({
 export function Reports() {
   const { transactions } = useAppData();
 
+  /* ── Supabase soldes ── */
+  const [supabaseSoldes, setSupabaseSoldes] = useState<SoldesResult | null>(null);
+  const [soldesLoading, setSoldesLoading] = useState(false);
+
   /* ── Sélecteurs ── */
   const [bilanYear, setBilanYear]   = useState(() => dayjs().year());
   const [selectedMonth, setSelectedMonth] = useState(dayjs().format('YYYY-MM'));
@@ -238,6 +244,29 @@ export function Reports() {
     []
   );
 
+  useEffect(() => {
+    setSoldesLoading(true);
+    calculateSoldes({
+      dateDebut: `${bilanYear}-01-01`,
+      dateFin:   `${bilanYear}-12-31`,
+    }).then((result) => {
+      setSupabaseSoldes(result);
+      setSoldesLoading(false);
+    });
+  }, [bilanYear]);
+
+  /* ── Totaux consolidés Supabase (agrégation cross-devise en MAD) ── */
+  const supaTotaux = useMemo(() => {
+    if (!supabaseSoldes) return null;
+    const { parDevise, beneficeTotal } = supabaseSoldes;
+    return {
+      totalAchats:  parDevise.reduce((s, d) => s + d.totalAchats,  0),
+      totalVentes:  parDevise.reduce((s, d) => s + d.totalVentes,  0),
+      totalCharges: parDevise.reduce((s, d) => s + d.totalCharges, 0),
+      beneficeTotal,
+    };
+  }, [supabaseSoldes]);
+
   /* ── Bilan annuel V8 ── */
   const bilanRows = useMemo(
     () => buildBilanAnnuelV8(transactions, bilanYear),
@@ -246,14 +275,16 @@ export function Reports() {
 
   const bilanTotal = useMemo(() => computeTotal(bilanRows), [bilanRows]);
 
-  /* ── KPI année ── */
+  /* ── KPI année — Supabase en priorité, localStorage en fallback ── */
   const yearKpi = useMemo(() => {
-    const beneficeBrut = bilanTotal.ventesMad - bilanTotal.achatsMad;
-    const marge = bilanTotal.ventesMad > 0
-      ? (bilanTotal.benefice / bilanTotal.ventesMad) * 100
-      : 0;
-    return { ...bilanTotal, beneficeBrut, marge };
-  }, [bilanTotal]);
+    const achatsMad  = supaTotaux?.totalAchats   ?? bilanTotal.achatsMad;
+    const ventesMad  = supaTotaux?.totalVentes   ?? bilanTotal.ventesMad;
+    const chargesMad = supaTotaux?.totalCharges  ?? bilanTotal.chargesMad;
+    const benefice   = supaTotaux?.beneficeTotal ?? bilanTotal.benefice;
+    const beneficeBrut = ventesMad - achatsMad;
+    const marge = ventesMad > 0 ? (benefice / ventesMad) * 100 : 0;
+    return { ...bilanTotal, achatsMad, ventesMad, chargesMad, benefice, beneficeBrut, marge };
+  }, [bilanTotal, supaTotaux]);
 
   /* ── Données graphiques ── */
   const chartData = useMemo(
@@ -577,6 +608,23 @@ export function Reports() {
       />
 
       <div className="page-content space-y-8">
+      {/* ── Source badge ── */}
+      <div className="flex items-center gap-2 text-xs text-zinc-500">
+        {soldesLoading ? (
+          <span className="animate-pulse rounded-full bg-blue-100 px-2 py-0.5 text-blue-600">
+            Supabase — chargement…
+          </span>
+        ) : supabaseSoldes ? (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-700 ring-1 ring-emerald-200">
+            KPI source : Supabase ✓
+          </span>
+        ) : (
+          <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-500 ring-1 ring-zinc-200">
+            KPI source : localStorage (Supabase indisponible)
+          </span>
+        )}
+      </div>
+
       {/* ── KPI cards ── */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
         {kpiItems.map(({ label, value, suffix, icon: Icon, color, bg }) => (

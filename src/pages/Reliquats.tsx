@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PageHero } from '@/components/PageHero';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
@@ -19,12 +19,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
-  getReliquats,
+  getReliquats as getReliquatsLocal,
   addReliquat,
   ajouterVersement,
   deleteReliquat,
   getExchangeRates,
 } from '@/lib/storage';
+import { supabase } from '@/lib/supabase';
+import {
+  getReliquats as fetchSupaReliquats,
+  createReliquat as saveReliquatToSupabase,
+  updateReliquat as updateReliquatInSupabase,
+} from '@/services/supabaseService';
+import type { ReliquatDB, VersementDB } from '@/types/supabase';
 import { DEVISES, TAUX_PAR_DEFAUT } from '@/lib/constants';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import type { Reliquat, StatutReliquat } from '@/types';
@@ -214,22 +221,37 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
       return;
     }
     const today = todayStr();
+    const montant = parseFloat(form.montantInitial);
     addReliquat({
       dateCreation: today,
       client: form.client.trim(),
       categorieClient: form.categorieClient,
       devise: form.devise,
-      montantInitial: parseFloat(form.montantInitial),
-      montantRestant: parseFloat(form.montantInitial),
+      montantInitial: montant,
+      montantRestant: montant,
       operationRef: form.operationRef.trim(),
       operationNumero: form.operationNumero.trim() || undefined,
       statut: 'NON_SOLDE',
       note: form.note.trim() || undefined,
     });
+    void saveReliquatToSupabase({
+      client: form.client.trim(),
+      categorie_client: form.categorieClient,
+      operation_ref: form.operationRef.trim(),
+      operation_numero: form.operationNumero.trim() || null,
+      devise: form.devise,
+      montant_initial: montant,
+      montant_restant: montant,
+      statut: 'NON_SOLDE',
+      versements: [],
+      note: form.note.trim() || null,
+      date_creation: today,
+      date_maj: today,
+    });
     logAudit(AUDIT_ACTIONS.RELIQUAT_CREATE, {
       client: form.client,
       devise: form.devise,
-      montant: parseFloat(form.montantInitial),
+      montant,
       operationRef: form.operationRef,
     }, today);
     onCreated();
@@ -400,6 +422,17 @@ function SolderModal({
     const today = todayStr();
     const updated = ajouterVersement(reliquat.id, { date: today, montant: val, note: note.trim() || undefined });
     if (!updated) return;
+    void updateReliquatInSupabase(reliquat.id, {
+      montant_restant: updated.montantRestant,
+      statut: updated.statut,
+      versements: updated.versements.map((v) => ({
+        id: v.id,
+        date: v.date,
+        montant: v.montant,
+        note: v.note ?? null,
+      })),
+      date_maj: today,
+    });
     logAudit(
       updated.statut === 'SOLDE' ? AUDIT_ACTIONS.RELIQUAT_SOLDE : AUDIT_ACTIONS.RELIQUAT_VERSEMENT,
       { id: reliquat.id, client: reliquat.client, montant: val, restant: updated.montantRestant },
@@ -536,12 +569,38 @@ function SortTh({
   );
 }
 
+// ─── Supabase mappers ────────────────────────────────────────────────────────
+
+function dbToLocalReliquat(db: ReliquatDB): Reliquat {
+  return {
+    id: db.id,
+    dateCreation: db.date_creation,
+    dateMaj: db.date_maj,
+    client: db.client,
+    categorieClient: (db.categorie_client as 'HABITUEL' | 'AMI') ?? undefined,
+    operationRef: db.operation_ref,
+    operationNumero: db.operation_numero ?? undefined,
+    devise: db.devise,
+    montantInitial: db.montant_initial,
+    montantRestant: db.montant_restant,
+    statut: db.statut,
+    versements: (db.versements as VersementDB[]).map((v) => ({
+      id: v.id,
+      date: v.date,
+      montant: v.montant,
+      note: v.note ?? undefined,
+    })),
+    note: db.note ?? undefined,
+  };
+}
+
 // ═══════════════════════════════════════
 //   Page principale
 // ═══════════════════════════════════════
 
 export function Reliquats() {
-  const [reliquats, setReliquats] = useState<Reliquat[]>(getReliquats);
+  const [reliquats, setReliquats] = useState<Reliquat[]>([]);
+  const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -556,9 +615,20 @@ export function Reliquats() {
   const [sortCol, setSortCol] = useState<SortKey>('dateCreation');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  function refresh() {
-    setReliquats(getReliquats());
+  async function loadReliquats() {
+    setLoading(true);
+    const rows = await fetchSupaReliquats();
+    if (rows.length > 0) {
+      setReliquats(rows.map(dbToLocalReliquat));
+    } else {
+      setReliquats(getReliquatsLocal());
+    }
+    setLoading(false);
   }
+
+  const refresh = () => { void loadReliquats(); };
+
+  useEffect(() => { void loadReliquats(); }, []);
 
   function showToast(msg: string, ok = true) {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -573,6 +643,9 @@ export function Reliquats() {
 
   function handleDelete(id: string) {
     deleteReliquat(id);
+    supabase.from('reliquats').delete().eq('id', id).then(({ error }) => {
+      if (error) console.error('[supabase] deleteReliquat:', error);
+    });
     logAudit(AUDIT_ACTIONS.RELIQUAT_DELETE, { id }, todayStr());
     refresh();
     setConfirmDelete(null);
@@ -705,10 +778,11 @@ export function Reliquats() {
 
               <Button
                 onClick={() => setShowCreate(true)}
-                className="ml-auto bg-amber-600 hover:bg-amber-700 text-white"
+                disabled={loading}
+                className="ml-auto bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-60"
               >
                 <Plus size={14} className="mr-1" />
-                Nouveau reliquat
+                {loading ? 'Chargement…' : 'Nouveau reliquat'}
               </Button>
             </div>
           </CardContent>

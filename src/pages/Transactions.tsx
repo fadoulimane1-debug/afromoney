@@ -8,7 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TransactionForm } from '@/components/TransactionForm';
-import { getTransactions, deleteTransaction, updateTransaction, getExchangeRates, getReliquats, ajouterVersement } from '@/lib/storage';
+import { getTransactions as getTransactionsLocal, deleteTransaction, updateTransaction, getExchangeRates, getReliquats, ajouterVersement } from '@/lib/storage';
+import { supabase } from '@/lib/supabase';
+import { getTransactions as fetchSupaTransactions, createTransaction as saveToSupabase } from '@/services/supabaseService';
+import type { Transaction as DBTransaction } from '@/types/supabase';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import type { Reliquat } from '@/types';
 import { buildHistoriqueV8Rows } from '@/lib/historiqueV8';
@@ -207,6 +210,8 @@ function EditModal({ tx, onClose, onSave }: EditModalProps) {
         ? statutVenteFromPaye(madFinal, payeFinal ?? 0)
         : (form.statut as Transaction['statut']);
 
+    const jourFinal = parseInt(form.jour, 10) || tx.jour;
+    const moisFinal = parseInt(form.mois, 10) || tx.mois;
     updateTransaction(tx.id, {
       statut: statutFinal,
       note: form.note,
@@ -216,8 +221,23 @@ function EditModal({ tx, onClose, onSave }: EditModalProps) {
       operation: form.operation.trim() || tx.operation,
       montantAPayer: payeFinal,
       caisseDepart,
-      jour: parseInt(form.jour, 10) || tx.jour,
-      mois: parseInt(form.mois, 10) || tx.mois,
+      jour: jourFinal,
+      mois: moisFinal,
+    });
+    supabase.from('transactions').update({
+      statut: statutFinal,
+      note: form.note,
+      taux,
+      montant_mad: madFinal,
+      beneficiaire: form.beneficiaire || null,
+      operation: form.operation.trim() || tx.operation,
+      montant_a_payer: payeFinal ?? null,
+      caisse_depart: caisseDepart ?? null,
+      jour: jourFinal,
+      mois: moisFinal,
+      updated_at: new Date().toISOString(),
+    }).eq('id', tx.id).then(({ error }) => {
+      if (error) console.error('[supabase] updateTransaction:', error);
     });
     onSave();
     onClose();
@@ -552,11 +572,88 @@ function ReliquatsPanel({ onRefresh }: { onRefresh: () => void }) {
   );
 }
 
+// ─── Supabase mappers ────────────────────────────────────────────────────────
+
+function dbToLocal(db: DBTransaction): Transaction {
+  return {
+    id: db.id,
+    date: new Date(db.date),
+    jour: db.jour,
+    mois: db.mois,
+    employeId: db.employe_id,
+    employeNom: db.employe_nom ?? undefined,
+    type: db.type as Transaction['type'],
+    operation: db.operation,
+    devise: db.devise,
+    montant: db.montant,
+    taux: db.taux,
+    montantMAD: db.montant_mad,
+    montantAPayer: db.montant_a_payer ?? undefined,
+    note: db.note ?? '',
+    statut: db.statut as Transaction['statut'],
+    moment: db.moment ?? undefined,
+    beneficiaire: db.beneficiaire ?? undefined,
+    clientId: db.client_id ?? undefined,
+    caisseDepart: db.caisse_depart ?? undefined,
+    numero: db.numero,
+    hash: db.hash ?? undefined,
+    annulationRef: db.annulation_ref ?? undefined,
+    annulationRaison: db.annulation_raison ?? undefined,
+  };
+}
+
+function localToDb(tx: Transaction): Omit<DBTransaction, 'id' | 'created_at' | 'updated_at'> {
+  const d = tx.date instanceof Date ? tx.date : new Date(tx.date as string);
+  return {
+    numero: tx.numero ?? '',
+    type: tx.type,
+    devise: tx.devise,
+    montant: tx.montant,
+    montant_mad: tx.montantMAD,
+    taux: tx.taux,
+    operation: tx.operation,
+    statut: tx.statut,
+    moment: tx.moment ?? null,
+    montant_a_payer: tx.montantAPayer ?? null,
+    client_id: tx.clientId ?? null,
+    client_nom: null,
+    cin: null,
+    categorie: 'STANDARD',
+    beneficiaire: tx.beneficiaire ?? null,
+    employe_id: tx.employeId,
+    employe_nom: tx.employeNom ?? null,
+    note: tx.note ?? null,
+    caisse_depart: tx.caisseDepart ?? null,
+    jour: tx.jour,
+    mois: tx.mois,
+    annee: d.getFullYear(),
+    hash: tx.hash ?? null,
+    annulation_ref: tx.annulationRef ?? null,
+    annulation_raison: tx.annulationRaison ?? null,
+    date: d.toISOString().slice(0, 10),
+  };
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export function Transactions() {
-  const [tick, setTick] = useState(0);
-  const refresh = () => setTick((n) => n + 1);
+  const [allTx, setAllTx] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  async function loadTransactions() {
+    setLoading(true);
+    const rows = await fetchSupaTransactions();
+    if (rows.length > 0) {
+      setAllTx(rows.map(dbToLocal));
+    } else {
+      setAllTx(getTransactionsLocal());
+    }
+    setLoading(false);
+  }
+
+  const refresh = () => { void loadTransactions(); };
+
+  useEffect(() => { void loadTransactions(); }, []);
 
   // Filters
   const [month,   setMonth]   = useState(dayjs().format('YYYY-MM'));
@@ -576,14 +673,7 @@ export function Transactions() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
-  const rates = useMemo(() => {
-    void tick;
-    return getExchangeRates();
-  }, [tick]);
-  const allTx = useMemo(() => {
-    void tick;
-    return getTransactions();
-  }, [tick]);
+  const rates = useMemo(() => getExchangeRates(), []);
 
   function handleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -695,6 +785,9 @@ export function Transactions() {
 
   function handleDelete(id: string) {
     deleteTransaction(id);
+    supabase.from('transactions').delete().eq('id', id).then(({ error }) => {
+      if (error) console.error('[supabase] deleteTransaction:', error);
+    });
     setConfirmDelete(null);
     refresh();
   }
@@ -708,7 +801,10 @@ export function Transactions() {
 
       <div className="page-content space-y-6">
       {/* ── Formulaire ── */}
-      <TransactionForm onSuccess={refresh} />
+      <TransactionForm onSuccess={async (tx) => {
+        await saveToSupabase(localToDb(tx));
+        await loadTransactions();
+      }} />
 
       {/* ── Reliquats panel ── */}
       <ReliquatsPanel onRefresh={refresh} />
@@ -725,10 +821,10 @@ export function Transactions() {
               </span>
             </CardTitle>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={exportCSV}>
+              <Button variant="outline" size="sm" onClick={exportCSV} disabled={loading}>
                 <Download size={13} /> Export CSV (détail)
               </Button>
-              <Button variant="outline" size="sm" onClick={exportHistoriqueV8}>
+              <Button variant="outline" size="sm" onClick={exportHistoriqueV8} disabled={loading}>
                 <Download size={13} /> Export HISTORIQUE V8
               </Button>
             </div>
