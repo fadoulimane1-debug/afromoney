@@ -1,0 +1,371 @@
+import express from 'express';
+import cors from 'cors';
+import { MongoClient, ObjectId } from 'mongodb';
+
+// ── Config ────────────────────────────────────────────────────────────────────
+
+const PORT     = process.env.PORT ?? 3001;
+const MONGO_URI = process.env.MONGODB_URI
+  ?? 'mongodb+srv://afromoney:MongoDB@2026!@cluster0.zoqjwsy.mongodb.net/?appName=Cluster0';
+const DB_NAME  = process.env.DB_NAME ?? 'afromoney_db';
+
+// ── MongoDB connection (singleton) ────────────────────────────────────────────
+
+let db = null;
+
+async function getDb() {
+  if (db) return db;
+  const client = new MongoClient(MONGO_URI);
+  await client.connect();
+  db = client.db(DB_NAME);
+  console.log('✅ Connected to MongoDB:', DB_NAME);
+  return db;
+}
+
+// ── Express app ───────────────────────────────────────────────────────────────
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ── Health check ──────────────────────────────────────────────────────────────
+
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', db: db ? 'connected' : 'disconnected' });
+});
+
+// ── Test endpoint (dev only) ──────────────────────────────────────────────────
+
+app.get('/api/test-mongodb', async (_req, res) => {
+  const log = [];
+  let insertedId = null;
+
+  function step(msg) { log.push(msg); console.log(msg); }
+
+  try {
+    const database = await getDb();
+    step('✅ 1/5  Connexion MongoDB OK');
+
+    // Création transaction de test
+    const now = new Date();
+    const doc = {
+      numero:     'TEST-2026-999999',
+      type:       'ACHAT',
+      devise:     'EUR',
+      montant:    100,
+      montantMAD: 1085,
+      taux:       10.85,
+      operation:  'TEST — à supprimer',
+      statut:     'PAYÉ',
+      categorie:  'STANDARD',
+      employeId:  'TEST_EMPLOYE',
+      jour:       now.getDate(),
+      mois:       now.getMonth() + 1,
+      annee:      now.getFullYear(),
+      date:       now,
+      createdAt:  now,
+      updatedAt:  now,
+    };
+    const result = await database.collection('transactions').insertOne(doc);
+    insertedId = result.insertedId;
+    step(`✅ 2/5  Transaction créée : ${insertedId}`);
+
+    // Lecture
+    const transactions = await database.collection('transactions').find({}).toArray();
+    step(`✅ 3/5  ${transactions.length} transaction(s) trouvée(s)`);
+
+    // Calcul soldes
+    const txAll = await database.collection('transactions').find({}).toArray();
+    const totalAchats = txAll
+      .filter((t) => t.type === 'ACHAT')
+      .reduce((s, t) => s + (t.montantMAD ?? 0), 0);
+    step(`✅ 4/5  Soldes calculés — achats: ${totalAchats} MAD`);
+
+    // Nettoyage
+    await database.collection('transactions').deleteOne({ _id: insertedId });
+    insertedId = null;
+    step('✅ 5/5  Données de test nettoyées');
+
+    step('✅ ALL TESTS PASSED');
+    res.json({ success: true, log });
+  } catch (err) {
+    step(`❌ Test échoué : ${err.message}`);
+    if (insertedId) {
+      try {
+        const database = await getDb();
+        await database.collection('transactions').deleteOne({ _id: insertedId });
+        step('🧹 Nettoyage après échec effectué');
+      } catch { /* ignore */ }
+    }
+    res.status(500).json({ success: false, log, error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TRANSACTIONS — /api/transactions
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/transactions', async (req, res) => {
+  try {
+    const database = await getDb();
+    const query = {};
+
+    const { dateDebut, dateFin, devise, type, employeId } = req.query;
+
+    if (dateDebut || dateFin) {
+      query.date = {};
+      if (dateDebut) query.date.$gte = new Date(dateDebut);
+      if (dateFin)   query.date.$lte = new Date(dateFin);
+    }
+    if (devise)    query.devise    = devise;
+    if (type)      query.type      = type;
+    if (employeId) query.employeId = employeId;
+
+    const rows = await database
+      .collection('transactions')
+      .find(query)
+      .sort({ date: -1, createdAt: -1 })
+      .toArray();
+
+    res.json(rows.map(serializeTx));
+  } catch (err) {
+    console.error('[GET /api/transactions]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/transactions', async (req, res) => {
+  try {
+    const database = await getDb();
+    const doc = {
+      ...req.body,
+      date:      req.body.date ? new Date(req.body.date) : new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    const result = await database.collection('transactions').insertOne(doc);
+    const inserted = await database.collection('transactions').findOne({ _id: result.insertedId });
+    res.status(201).json(serializeTx(inserted));
+  } catch (err) {
+    console.error('[POST /api/transactions]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/transactions/:id', async (req, res) => {
+  try {
+    const database = await getDb();
+    const { id } = req.params;
+    const update = { ...req.body, updatedAt: new Date() };
+    if (update.date) update.date = new Date(update.date);
+
+    await database
+      .collection('transactions')
+      .updateOne({ _id: new ObjectId(id) }, { $set: update });
+
+    const updated = await database.collection('transactions').findOne({ _id: new ObjectId(id) });
+    res.json(serializeTx(updated));
+  } catch (err) {
+    console.error('[PATCH /api/transactions/:id]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/transactions/:id', async (req, res) => {
+  try {
+    const database = await getDb();
+    await database.collection('transactions').deleteOne({ _id: new ObjectId(req.params.id) });
+    res.status(204).end();
+  } catch (err) {
+    console.error('[DELETE /api/transactions/:id]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RELIQUATS — /api/reliquats
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/reliquats', async (req, res) => {
+  try {
+    const database = await getDb();
+    const query = {};
+    const { statut, client } = req.query;
+    if (statut) query.statut = statut;
+    if (client) query.client = { $regex: client, $options: 'i' };
+
+    const rows = await database
+      .collection('reliquats')
+      .find(query)
+      .sort({ dateCreation: -1 })
+      .toArray();
+
+    res.json(rows.map(serializeDoc));
+  } catch (err) {
+    console.error('[GET /api/reliquats]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/reliquats', async (req, res) => {
+  try {
+    const database = await getDb();
+    const doc = {
+      ...req.body,
+      dateCreation: req.body.dateCreation ? new Date(req.body.dateCreation) : new Date(),
+      dateMaj:      new Date(),
+      createdAt:    new Date(),
+      updatedAt:    new Date(),
+    };
+    const result  = await database.collection('reliquats').insertOne(doc);
+    const inserted = await database.collection('reliquats').findOne({ _id: result.insertedId });
+    res.status(201).json(serializeDoc(inserted));
+  } catch (err) {
+    console.error('[POST /api/reliquats]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/reliquats/:id', async (req, res) => {
+  try {
+    const database = await getDb();
+    await database.collection('reliquats').deleteOne({ _id: new ObjectId(req.params.id) });
+    res.status(204).end();
+  } catch (err) {
+    console.error('[DELETE /api/reliquats/:id]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/reliquats/:id', async (req, res) => {
+  try {
+    const database = await getDb();
+    const update = { ...req.body, updatedAt: new Date(), dateMaj: new Date() };
+
+    await database
+      .collection('reliquats')
+      .updateOne({ _id: new ObjectId(req.params.id) }, { $set: update });
+
+    const updated = await database.collection('reliquats').findOne({ _id: new ObjectId(req.params.id) });
+    res.json(serializeDoc(updated));
+  } catch (err) {
+    console.error('[PATCH /api/reliquats/:id]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SOLDES calculés — /api/soldes
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/soldes', async (req, res) => {
+  try {
+    const database = await getDb();
+    const query = {};
+    const { dateDebut, dateFin } = req.query;
+
+    if (dateDebut || dateFin) {
+      query.date = {};
+      if (dateDebut) query.date.$gte = new Date(dateDebut);
+      if (dateFin)   query.date.$lte = new Date(dateFin);
+    }
+
+    const transactions = await database.collection('transactions').find(query).toArray();
+
+    const deviseMap = new Map();
+    let totalAchatsMAD = 0;
+    let totalVentesMAD = 0;
+    let totalCharges   = 0;
+
+    for (const tx of transactions) {
+      const devise = tx.devise ?? 'MAD';
+      if (!deviseMap.has(devise)) {
+        deviseMap.set(devise, { devise, achats: 0, ventes: 0, net: 0 });
+      }
+      const entry = deviseMap.get(devise);
+
+      if (tx.type === 'ACHAT') {
+        entry.achats   += tx.montant    ?? 0;
+        totalAchatsMAD += tx.montantMAD ?? 0;
+      } else if (tx.type === 'VENTE') {
+        entry.ventes   += tx.montant    ?? 0;
+        totalVentesMAD += tx.montantMAD ?? 0;
+      } else if (tx.type === 'CHARGES') {
+        totalCharges   += tx.montantMAD ?? 0;
+      }
+    }
+
+    const parDevise = [...deviseMap.values()].map((d) => ({
+      ...d,
+      net: d.ventes - d.achats,
+    }));
+
+    res.json({
+      parDevise,
+      totalAchatsMAD,
+      totalVentesMAD,
+      totalCharges,
+      benefice: totalVentesMAD - totalAchatsMAD - totalCharges,
+    });
+  } catch (err) {
+    console.error('[GET /api/soldes]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Serializers (ObjectId → string, Date → ISO string) ────────────────────────
+
+function serializeTx(doc) {
+  if (!doc) return null;
+  return {
+    ...doc,
+    _id:       doc._id?.toString(),
+    date:      doc.date instanceof Date      ? doc.date.toISOString()      : doc.date,
+    createdAt: doc.createdAt instanceof Date ? doc.createdAt.toISOString() : doc.createdAt,
+    updatedAt: doc.updatedAt instanceof Date ? doc.updatedAt.toISOString() : doc.updatedAt,
+  };
+}
+
+function serializeDoc(doc) {
+  if (!doc) return null;
+  const out = { ...doc, _id: doc._id?.toString() };
+  for (const [k, v] of Object.entries(out)) {
+    if (v instanceof Date) out[k] = v.toISOString();
+  }
+  return out;
+}
+
+// ── Index creation ────────────────────────────────────────────────────────────
+
+async function createIndexes(database) {
+  try {
+    // Transactions
+    await database.collection('transactions').createIndex({ date: -1 });
+    await database.collection('transactions').createIndex({ numero: 1 }, { unique: true, sparse: true });
+    await database.collection('transactions').createIndex({ devise: 1 });
+    await database.collection('transactions').createIndex({ type: 1 });
+    await database.collection('transactions').createIndex({ employeId: 1 });
+    await database.collection('transactions').createIndex({ annee: 1, mois: 1 });
+
+    // Reliquats
+    await database.collection('reliquats').createIndex({ statut: 1 });
+    await database.collection('reliquats').createIndex({ client: 1 });
+    await database.collection('reliquats').createIndex({ dateCreation: -1 });
+
+    // Mouvements caisse
+    await database.collection('mouvements_caisse').createIndex({ timestamp: -1 });
+    await database.collection('mouvements_caisse').createIndex({ devise: 1 });
+
+    console.log('✅ MongoDB indexes ready');
+  } catch (err) {
+    console.error('❌ Error creating indexes:', err.message);
+  }
+}
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+
+app.listen(PORT, async () => {
+  console.log(`🚀 AFROMONEY API server running on http://localhost:${PORT}/api`);
+  const database = await getDb().catch(() => null);
+  if (database) await createIndexes(database);
+});

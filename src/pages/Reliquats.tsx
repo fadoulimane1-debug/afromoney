@@ -32,6 +32,13 @@ import {
   updateReliquat as updateReliquatInSupabase,
 } from '@/services/supabaseService';
 import type { ReliquatDB, VersementDB } from '@/types/supabase';
+import {
+  apiGetReliquats,
+  apiCreateReliquat,
+  apiUpdateReliquat,
+  apiDeleteReliquat,
+} from '@/lib/mongoApiClient';
+import type { ApiReliquat } from '@/lib/mongoApiClient';
 import { DEVISES, TAUX_PAR_DEFAUT } from '@/lib/constants';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 import type { Reliquat, StatutReliquat } from '@/types';
@@ -248,6 +255,20 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
       date_creation: today,
       date_maj: today,
     });
+    void apiCreateReliquat({
+      client:          form.client.trim(),
+      categorieClient: form.categorieClient,
+      operationRef:    form.operationRef.trim(),
+      operationNumero: form.operationNumero.trim() || null,
+      devise:          form.devise,
+      montantInitial:  montant,
+      montantRestant:  montant,
+      statut:          'NON_SOLDE',
+      versements:      [],
+      note:            form.note.trim() || null,
+      dateCreation:    new Date().toISOString(),
+      dateMaj:         new Date().toISOString(),
+    }).catch((err) => console.error('[MongoDB] createReliquat:', err));
     logAudit(AUDIT_ACTIONS.RELIQUAT_CREATE, {
       client: form.client,
       devise: form.devise,
@@ -433,6 +454,17 @@ function SolderModal({
       })),
       date_maj: today,
     });
+    void apiUpdateReliquat(reliquat.id, {
+      montantRestant: updated.montantRestant,
+      statut:         updated.statut,
+      versements:     updated.versements.map((v) => ({
+        id: v.id,
+        date: v.date,
+        montant: v.montant,
+        note: v.note ?? null,
+      })),
+      dateMaj: new Date().toISOString(),
+    }).catch((err) => console.error('[MongoDB] updateReliquat:', err));
     logAudit(
       updated.statut === 'SOLDE' ? AUDIT_ACTIONS.RELIQUAT_SOLDE : AUDIT_ACTIONS.RELIQUAT_VERSEMENT,
       { id: reliquat.id, client: reliquat.client, montant: val, restant: updated.montantRestant },
@@ -594,6 +626,32 @@ function dbToLocalReliquat(db: ReliquatDB): Reliquat {
   };
 }
 
+// ─── MongoDB mappers ──────────────────────────────────────────────────────────
+
+function mongoToLocalReliquat(doc: ApiReliquat): Reliquat {
+  type V = { id: string; date: string; montant: number; note?: string | null };
+  return {
+    id: doc._id,
+    dateCreation: String(doc.dateCreation ?? '').slice(0, 10) || todayStr(),
+    dateMaj:      String(doc.dateMaj      ?? '').slice(0, 10) || todayStr(),
+    client:        doc.client,
+    categorieClient: (doc['categorieClient'] as 'HABITUEL' | 'AMI') ?? undefined,
+    operationRef:  doc.operationRef,
+    operationNumero: (doc['operationNumero'] as string) ?? undefined,
+    devise:        doc.devise,
+    montantInitial: doc.montantInitial,
+    montantRestant: doc.montantRestant,
+    statut:        doc.statut,
+    versements: (doc.versements as V[]).map((v) => ({
+      id: v.id,
+      date: v.date,
+      montant: v.montant,
+      note: v.note ?? undefined,
+    })),
+    note: (doc['note'] as string) ?? undefined,
+  };
+}
+
 // ═══════════════════════════════════════
 //   Page principale
 // ═══════════════════════════════════════
@@ -617,9 +675,17 @@ export function Reliquats() {
 
   async function loadReliquats() {
     setLoading(true);
-    const rows = await fetchSupaReliquats();
-    if (rows.length > 0) {
-      setReliquats(rows.map(dbToLocalReliquat));
+    try {
+      const mongoRows = await apiGetReliquats();
+      if (mongoRows.length > 0) {
+        setReliquats(mongoRows.map(mongoToLocalReliquat));
+        setLoading(false);
+        return;
+      }
+    } catch { /* backend non disponible */ }
+    const supaRows = await fetchSupaReliquats();
+    if (supaRows.length > 0) {
+      setReliquats(supaRows.map(dbToLocalReliquat));
     } else {
       setReliquats(getReliquatsLocal());
     }
@@ -646,6 +712,7 @@ export function Reliquats() {
     supabase.from('reliquats').delete().eq('id', id).then(({ error }) => {
       if (error) console.error('[supabase] deleteReliquat:', error);
     });
+    void apiDeleteReliquat(id).catch((err) => console.error('[MongoDB] deleteReliquat:', err));
     logAudit(AUDIT_ACTIONS.RELIQUAT_DELETE, { id }, todayStr());
     refresh();
     setConfirmDelete(null);

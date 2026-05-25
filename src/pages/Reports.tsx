@@ -58,6 +58,7 @@ import {
 import { getTransactions } from '@/lib/storage';
 import { calculateSoldes } from '@/services/supabaseService';
 import type { SoldesResult } from '@/services/supabaseService';
+import { apiCalculateSoldes } from '@/lib/mongoApiClient';
 import { fmt, fmtPct, fmtNumber } from '@/lib/formatNumbers';
 
 dayjs.locale('fr');
@@ -227,6 +228,10 @@ export function Reports() {
   const [supabaseSoldes, setSupabaseSoldes] = useState<SoldesResult | null>(null);
   const [soldesLoading, setSoldesLoading] = useState(false);
 
+  /* ── MongoDB soldes (via backend REST) ── */
+  const [mongoSoldes, setMongoSoldes] = useState<Awaited<ReturnType<typeof apiCalculateSoldes>> | null>(null);
+  const [mongoLoading, setMongoLoading] = useState(false);
+
   /* ── Sélecteurs ── */
   const [bilanYear, setBilanYear]   = useState(() => dayjs().year());
   const [selectedMonth, setSelectedMonth] = useState(dayjs().format('YYYY-MM'));
@@ -255,6 +260,18 @@ export function Reports() {
     });
   }, [bilanYear]);
 
+  useEffect(() => {
+    setMongoLoading(true);
+    setMongoSoldes(null);
+    apiCalculateSoldes({
+      dateDebut: `${bilanYear}-01-01`,
+      dateFin:   `${bilanYear}-12-31`,
+    })
+      .then((result) => setMongoSoldes(result))
+      .catch(() => { /* backend non disponible — silencieux */ })
+      .finally(() => setMongoLoading(false));
+  }, [bilanYear]);
+
   /* ── Totaux consolidés Supabase (agrégation cross-devise en MAD) ── */
   const supaTotaux = useMemo(() => {
     if (!supabaseSoldes) return null;
@@ -267,6 +284,17 @@ export function Reports() {
     };
   }, [supabaseSoldes]);
 
+  /* ── Totaux MongoDB ── */
+  const mongoTotaux = useMemo(() => {
+    if (!mongoSoldes) return null;
+    return {
+      totalAchats:  mongoSoldes.totalAchatsMAD,
+      totalVentes:  mongoSoldes.totalVentesMAD,
+      totalCharges: mongoSoldes.totalCharges,
+      beneficeTotal: mongoSoldes.benefice,
+    };
+  }, [mongoSoldes]);
+
   /* ── Bilan annuel V8 ── */
   const bilanRows = useMemo(
     () => buildBilanAnnuelV8(transactions, bilanYear),
@@ -275,16 +303,17 @@ export function Reports() {
 
   const bilanTotal = useMemo(() => computeTotal(bilanRows), [bilanRows]);
 
-  /* ── KPI année — Supabase en priorité, localStorage en fallback ── */
+  /* ── KPI année — MongoDB en priorité, Supabase en 2e, localStorage en fallback ── */
   const yearKpi = useMemo(() => {
-    const achatsMad  = supaTotaux?.totalAchats   ?? bilanTotal.achatsMad;
-    const ventesMad  = supaTotaux?.totalVentes   ?? bilanTotal.ventesMad;
-    const chargesMad = supaTotaux?.totalCharges  ?? bilanTotal.chargesMad;
-    const benefice   = supaTotaux?.beneficeTotal ?? bilanTotal.benefice;
+    const source   = mongoTotaux ?? supaTotaux;
+    const achatsMad  = source?.totalAchats   ?? bilanTotal.achatsMad;
+    const ventesMad  = source?.totalVentes   ?? bilanTotal.ventesMad;
+    const chargesMad = source?.totalCharges  ?? bilanTotal.chargesMad;
+    const benefice   = source?.beneficeTotal ?? bilanTotal.benefice;
     const beneficeBrut = ventesMad - achatsMad;
     const marge = ventesMad > 0 ? (benefice / ventesMad) * 100 : 0;
     return { ...bilanTotal, achatsMad, ventesMad, chargesMad, benefice, beneficeBrut, marge };
-  }, [bilanTotal, supaTotaux]);
+  }, [bilanTotal, supaTotaux, mongoTotaux]);
 
   /* ── Données graphiques ── */
   const chartData = useMemo(
@@ -609,8 +638,17 @@ export function Reports() {
 
       <div className="page-content space-y-8">
       {/* ── Source badge ── */}
-      <div className="flex items-center gap-2 text-xs text-zinc-500">
-        {soldesLoading ? (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+        {mongoLoading ? (
+          <span className="animate-pulse rounded-full bg-violet-100 px-2 py-0.5 text-violet-600">
+            MongoDB — chargement…
+          </span>
+        ) : mongoSoldes ? (
+          <span className="rounded-full bg-violet-100 px-2 py-0.5 text-violet-700 ring-1 ring-violet-200">
+            KPI source : MongoDB ✓
+          </span>
+        ) : null}
+        {!mongoSoldes && (soldesLoading ? (
           <span className="animate-pulse rounded-full bg-blue-100 px-2 py-0.5 text-blue-600">
             Supabase — chargement…
           </span>
@@ -620,9 +658,9 @@ export function Reports() {
           </span>
         ) : (
           <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-zinc-500 ring-1 ring-zinc-200">
-            KPI source : localStorage (Supabase indisponible)
+            KPI source : localStorage
           </span>
-        )}
+        ))}
       </div>
 
       {/* ── KPI cards ── */}
