@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
+import { Login } from '@/pages/Login';
+import { useAuthContext } from '@/context/AuthContext';
 import { Dashboard } from '@/pages/Dashboard';
 import { Transactions } from '@/pages/Transactions';
 import { Stock } from '@/pages/Stock';
@@ -25,10 +27,17 @@ import { AuditTrail } from '@/pages/AuditTrail';
 // Synthèse = Dashboard (ou tu peux créer une page Synthèse.tsx séparée)
 const Synthese = Dashboard;
 
+function ProtectedLayout() {
+  const { isAuthenticated } = useAuthContext();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <Layout />;
+}
+
 export function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
+      <Route path="/login" element={<Login />} />
+      <Route element={<ProtectedLayout />}>
         {/* ═══════════════════════════════════════════════════════════ */}
         {/* PAGES PRINCIPALES */}
         {/* ═══════════════════════════════════════════════════════════ */}

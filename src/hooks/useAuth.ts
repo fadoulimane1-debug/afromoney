@@ -1,26 +1,18 @@
-import { getCurrentUser, setCurrentUser, logout as storageLogout } from '@/lib/storage';
-import { UTILISATEURS_TEST } from '@/lib/constants';
+import { useAuthContext } from '@/context/AuthContext';
 import type { User } from '@/types';
 
-const DEFAULT_ADMIN: User = {
-  ...UTILISATEURS_TEST[0],
-  dateCreation: new Date(),
-};
-
-/** Auto-initialise l'admin si aucun utilisateur n'est stocké. */
-function getOrInitUser(): User {
-  const stored = getCurrentUser();
-  if (stored) return stored;
-  setCurrentUser(DEFAULT_ADMIN);
-  return DEFAULT_ADMIN;
-}
-
 export const useAuth = () => {
-  const currentUser = getOrInitUser();
+  const { user, isAuthenticated, logout } = useAuthContext();
 
-  const logout = () => {
-    storageLogout();
-  };
+  const currentUser: User | null = user
+    ? {
+        id: user.id,
+        nom: user.name,
+        email: user.email,
+        role: user.role as User['role'],
+        dateCreation: new Date(),
+      }
+    : null;
 
-  return { currentUser, isLoggedIn: true, logout };
+  return { currentUser, isLoggedIn: isAuthenticated, logout };
 };

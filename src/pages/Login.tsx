@@ -1,13 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, Zap } from 'lucide-react';
+import { LogIn, Eye, EyeOff, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { Logo } from '@/components/Logo';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { UTILISATEURS_TEST } from '@/lib/constants';
-import { setCurrentUser } from '@/lib/storage';
-import type { User } from '@/types';
+import { useAuthContext } from '@/context/AuthContext';
 
 interface FormErrors {
   email?: string;
@@ -15,167 +10,285 @@ interface FormErrors {
   general?: string;
 }
 
+const DEMO_ACCOUNTS = [
+  {
+    label: 'Admin',
+    sublabel: 'admin@afromoney.ma',
+    email: 'admin@afromoney.ma',
+    password: 'Admin2026!',
+    color: '#D4AF37',
+    initials: 'AD',
+  },
+  {
+    label: 'Caissier',
+    sublabel: 'caissier1@afromoney.ma',
+    email: 'caissier1@afromoney.ma',
+    password: 'Test2026!',
+    color: '#C41E3A',
+    initials: 'CA',
+  },
+] as const;
+
 function validate(email: string, password: string): FormErrors {
   const errors: FormErrors = {};
-  if (!email.includes('@')) errors.email = 'Adresse email invalide';
-  if (password.length < 6) errors.password = 'Mot de passe minimum 6 caractères';
+  if (!email.trim()) errors.email = 'Email requis';
+  else if (!email.includes('@')) errors.email = 'Adresse email invalide';
+  if (!password) errors.password = 'Mot de passe requis';
+  else if (password.length < 6) errors.password = 'Minimum 6 caractères';
   return errors;
-}
-
-function loginAs(email: string, navigate: ReturnType<typeof useNavigate>) {
-  const found = UTILISATEURS_TEST.find((u) => u.email === email);
-  if (!found) return;
-  const user: User = { ...found, dateCreation: new Date() };
-  setCurrentUser(user);
-  navigate('/');
 }
 
 export function Login() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const { login, isAuthenticated } = useAuthContext();
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [loading, setLoading] = useState(false);
+  const [showPwd, setShowPwd]   = useState(false);
+  const [errors, setErrors]     = useState<FormErrors>({});
+  const [loading, setLoading]   = useState(false);
+  const [success, setSuccess]   = useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  useEffect(() => {
+    if (isAuthenticated) navigate('/', { replace: true });
+  }, [isAuthenticated, navigate]);
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const errs = validate(email, password);
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
-      return;
-    }
+    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
     setErrors({});
     setLoading(true);
+    await new Promise((r) => setTimeout(r, 600));
+    const result = await login(email, password);
+    if (!result.ok) {
+      setErrors({ general: result.error });
+      setLoading(false);
+      return;
+    }
+    setLoading(false);
+    setSuccess(true);
+    await new Promise((r) => setTimeout(r, 900));
+    navigate('/', { replace: true });
+  }
 
-    // Simule un court délai réseau
-    setTimeout(() => {
-      const found = UTILISATEURS_TEST.find((u) => u.email === email);
-      if (!found) {
-        setErrors({ general: 'Email ou mot de passe incorrect' });
-        setLoading(false);
-        return;
-      }
-      const user: User = { ...found, dateCreation: new Date() };
-      setCurrentUser(user);
-      navigate('/');
-    }, 400);
+  function fillDemo(acc: (typeof DEMO_ACCOUNTS)[number]) {
+    setEmail(acc.email);
+    setPassword(acc.password);
+    setErrors({});
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-b from-zinc-50 to-zinc-100 px-4">
-      {/* Glow background */}
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-1/2 top-1/3 h-96 w-96 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-400/20 blur-3xl" />
-      </div>
+    <div className="login-bg relative flex min-h-screen items-center justify-center px-4 py-8 overflow-hidden">
 
-      <div className="relative w-full max-w-sm space-y-4">
-        {/* Logo */}
-        <div className="text-center">
-          <Logo size="lg" className="mx-auto mb-3 drop-shadow-md" />
-          <h1 className="text-2xl font-bold text-zinc-900">AFROMONEY</h1>
-          <p className="mt-1 text-sm text-zinc-600">Office de change — interface alignée AFROMONEY V8</p>
-        </div>
+      {/* Animated orbs */}
+      <div
+        className="pointer-events-none absolute rounded-full blur-[120px]"
+        style={{
+          width: 600, height: 600,
+          background: 'rgba(196,30,58,0.28)',
+          top: '-10%', left: '-15%',
+          animation: 'orbFloat1 18s ease-in-out infinite',
+        }}
+      />
+      <div
+        className="pointer-events-none absolute rounded-full blur-[120px]"
+        style={{
+          width: 500, height: 500,
+          background: 'rgba(45,80,22,0.32)',
+          bottom: '-12%', right: '-10%',
+          animation: 'orbFloat2 22s ease-in-out infinite',
+        }}
+      />
+      <div
+        className="pointer-events-none absolute rounded-full blur-[80px]"
+        style={{
+          width: 280, height: 280,
+          background: 'rgba(212,175,55,0.22)',
+          top: '35%', right: '20%',
+          animation: 'orbFloat3 14s ease-in-out infinite',
+        }}
+      />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Connexion</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-              {/* Erreur générale */}
+      {/* Grid overlay */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)',
+          backgroundSize: '48px 48px',
+        }}
+      />
+
+      {/* Card */}
+      <div
+        className="relative w-full max-w-sm"
+        style={{ animation: 'slideUpFade 0.55s cubic-bezier(0.16,1,0.3,1) both' }}
+      >
+        {/* Glow ring behind card */}
+        <div
+          className="absolute -inset-px rounded-[24px]"
+          style={{ background: 'linear-gradient(135deg, rgba(196,30,58,0.5), rgba(212,175,55,0.4), rgba(45,80,22,0.5))', filter: 'blur(1px)' }}
+        />
+
+        <div
+          className="relative rounded-[22px] border border-white/[0.1] shadow-[0_32px_80px_rgba(0,0,0,0.6)]"
+          style={{ background: 'rgba(8,13,28,0.88)', backdropFilter: 'blur(32px) saturate(180%)' }}
+        >
+          {/* Header */}
+          <div className="flex flex-col items-center px-8 pt-8 pb-6">
+            <div
+              className="mb-4 rounded-2xl p-1"
+              style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}
+            >
+              <Logo size="md" className="drop-shadow-xl" />
+            </div>
+            <h1
+              className="text-2xl font-bold tracking-tight text-white"
+              style={{ fontFamily: 'Outfit, Inter, sans-serif', animation: 'fadeInDown 0.5s ease 0.1s both' }}
+            >
+              AFROMONEY
+            </h1>
+            <p
+              className="mt-1 text-center text-[12px] text-white/45"
+              style={{ animation: 'fadeInDown 0.5s ease 0.18s both' }}
+            >
+              Bureau de change · Interface sécurisée
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div className="mx-8 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(212,175,55,0.4), transparent)' }} />
+
+          {/* Form */}
+          {success ? (
+            <div
+              className="flex flex-col items-center px-8 py-10"
+              style={{ animation: 'slideUpFade 0.4s ease both' }}
+            >
+              <CheckCircle2 size={52} className="text-emerald-400 drop-shadow-[0_0_16px_rgba(52,211,153,0.6)]" />
+              <p className="mt-4 text-base font-semibold text-white">Connexion réussie</p>
+              <p className="mt-1 text-xs text-white/50">Redirection en cours…</p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5 px-8 pt-6 pb-7" noValidate>
+
               {errors.general && (
-                <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                <div
+                  className="rounded-xl border border-red-500/25 px-4 py-3 text-sm text-red-400"
+                  style={{ background: 'rgba(196,30,58,0.1)', animation: 'slideUpFade 0.3s ease both' }}
+                >
                   {errors.general}
                 </div>
               )}
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600">Email</label>
-                <Input
+              {/* Email */}
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-white/60">Adresse email</label>
+                <input
                   type="email"
-                  placeholder="vous@afromoney.com"
                   value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    setErrors((prev) => ({ ...prev, email: undefined, general: undefined }));
-                  }}
-                  className={errors.email ? 'border-red-500 focus-visible:ring-red-500' : ''}
+                  onChange={(e) => { setEmail(e.target.value); setErrors((p) => ({ ...p, email: undefined, general: undefined })); }}
+                  placeholder="vous@afromoney.ma"
                   autoComplete="email"
+                  className="login-input w-full"
+                  style={errors.email ? { borderColor: 'rgba(196,30,58,0.6)' } : {}}
                 />
-                {errors.email && <p className="text-xs text-red-400">{errors.email}</p>}
+                {errors.email && <p className="text-[11px] text-red-400">{errors.email}</p>}
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-zinc-600">Mot de passe</label>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    setErrors((prev) => ({ ...prev, password: undefined, general: undefined }));
-                  }}
-                  className={errors.password ? 'border-red-500 focus-visible:ring-red-500' : ''}
-                  autoComplete="current-password"
-                />
-                {errors.password && <p className="text-xs text-red-400">{errors.password}</p>}
+              {/* Password */}
+              <div className="space-y-2">
+                <label className="block text-xs font-medium text-white/60">Mot de passe</label>
+                <div className="relative">
+                  <input
+                    type={showPwd ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => { setPassword(e.target.value); setErrors((p) => ({ ...p, password: undefined, general: undefined })); }}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    className="login-input w-full pr-10"
+                    style={errors.password ? { borderColor: 'rgba(196,30,58,0.6)' } : {}}
+                  />
+                  <button
+                    type="button"
+                    tabIndex={-1}
+                    onClick={() => setShowPwd((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 transition-colors hover:text-white/70"
+                  >
+                    {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+                {errors.password && <p className="text-[11px] text-red-400">{errors.password}</p>}
               </div>
 
-              <Button
+              {/* Submit */}
+              <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-700 hover:to-blue-600"
                 disabled={loading}
+                className="login-btn w-full"
               >
                 {loading ? (
-                  <span className="flex items-center gap-2">
+                  <span className="flex items-center justify-center gap-2">
                     <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 100 16v-4l-3 3 3 3v-4a8 8 0 01-8-8z" />
+                      <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+                      <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8v2a6 6 0 100 12v2a8 8 0 01-8-8z" />
                     </svg>
-                    Connexion…
+                    Vérification…
                   </span>
                 ) : (
-                  <span className="flex items-center gap-2">
+                  <span className="flex items-center justify-center gap-2">
                     <LogIn size={15} />
                     Se connecter
                   </span>
                 )}
-              </Button>
+              </button>
             </form>
-          </CardContent>
-        </Card>
+          )}
 
-        {/* Accès rapide */}
-        <Card>
-          <CardContent className="pt-4">
-            <div className="mb-3 flex items-center gap-2">
-              <Zap size={13} className="text-yellow-400" />
-              <span className="text-xs font-medium text-zinc-600">Accès rapide (démo)</span>
+          {/* Demo accounts */}
+          {!success && (
+            <div className="px-8 pb-8">
+              <div className="mb-3 flex items-center gap-2">
+                <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.08)' }} />
+                <span className="text-[11px] font-medium text-white/30">accès démo</span>
+                <div className="h-px flex-1" style={{ background: 'rgba(255,255,255,0.08)' }} />
+              </div>
+              <div className="grid grid-cols-2 gap-2.5">
+                {DEMO_ACCOUNTS.map((acc) => (
+                  <button
+                    key={acc.email}
+                    type="button"
+                    onClick={() => fillDemo(acc)}
+                    className="login-demo-btn flex items-center gap-2.5 rounded-xl border border-white/[0.08] px-3 py-2.5 text-left transition-all hover:border-white/20"
+                    style={{ background: 'rgba(255,255,255,0.04)' }}
+                  >
+                    <div
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold text-white"
+                      style={{ background: `${acc.color}33`, border: `1px solid ${acc.color}55` }}
+                    >
+                      {acc.initials}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-semibold leading-none text-white/90">{acc.label}</p>
+                      <p className="mt-0.5 truncate text-[9px] text-white/35">{acc.sublabel}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => loginAs('admin@afromoney.com', navigate)}
-                className="flex flex-col rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-left transition-colors hover:border-blue-300 hover:bg-blue-50"
-              >
-                <span className="text-xs font-semibold text-zinc-900">Admin</span>
-                <span className="mt-0.5 text-[10px] text-zinc-500">admin@afromoney.com</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => loginAs('employee@afromoney.com', navigate)}
-                className="flex flex-col rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-left transition-colors hover:border-blue-300 hover:bg-blue-50"
-              >
-                <span className="text-xs font-semibold text-zinc-900">Employee</span>
-                <span className="mt-0.5 text-[10px] text-zinc-500">employee@afromoney.com</span>
-              </button>
-            </div>
-          </CardContent>
-        </Card>
+          )}
 
-        <p className="text-center text-xs text-zinc-600">
-          Mot de passe de démo : n'importe quoi ≥ 6 caractères
-        </p>
+          {/* Footer */}
+          <div
+            className="rounded-b-[22px] border-t border-white/[0.06] px-8 py-3 text-center"
+            style={{ background: 'rgba(255,255,255,0.02)' }}
+          >
+            <div className="flex items-center justify-center gap-1.5 text-[10px] text-white/25">
+              <ShieldCheck size={11} />
+              <span>Session chiffrée · Données locales sécurisées</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
