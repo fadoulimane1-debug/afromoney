@@ -166,3 +166,35 @@ export async function apiCalculateSoldes(params?: {
   ).toString();
   return apiFetch<ApiSoldesResult>(`/soldes${qs ? `?${qs}` : ''}`);
 }
+
+// ──────────────────────────────────────────────────────────────
+// Clôtures journalières
+// ──────────────────────────────────────────────────────────────
+
+export async function apiGetClosures(): Promise<import('@/types').DailyClosure[]> {
+  return apiFetch<import('@/types').DailyClosure[]>('/closures');
+}
+
+export async function apiUpsertClosure(
+  closure: import('@/types').DailyClosure,
+): Promise<import('@/types').DailyClosure> {
+  return apiFetch<import('@/types').DailyClosure>('/closures', {
+    method: 'PUT',
+    body: JSON.stringify(closure),
+  });
+}
+
+// ──────────────────────────────────────────────────────────────
+// Taux de change partagés
+// ──────────────────────────────────────────────────────────────
+
+export async function apiGetExchangeRates(): Promise<{ rates: unknown[] }> {
+  return apiFetch<{ rates: unknown[] }>('/settings/exchange-rates');
+}
+
+export async function apiPutExchangeRates(rates: unknown[]): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>('/settings/exchange-rates', {
+    method: 'PUT',
+    body: JSON.stringify({ rates }),
+  });
+}

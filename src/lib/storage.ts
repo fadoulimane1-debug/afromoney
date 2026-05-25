@@ -9,6 +9,14 @@ import { UTILISATEURS_TEST } from '@/lib/constants';
 import { filterTransactionsComptables } from '@/lib/transactionFilters';
 import { fmtMad } from '@/lib/formatNumbers';
 import { calculRapportMensuel } from '@/lib/calculations';
+import { isCloudSyncEnabled } from '@/lib/cloudConfig';
+import {
+  cloudCreateTransaction,
+  cloudDeleteTransaction,
+  cloudUpdateTransaction,
+  cloudUpsertClosure,
+  cloudPutExchangeRates,
+} from '@/lib/cloudSync';
 
 function txDateStr(d: Transaction['date']): string {
   const t = d instanceof Date ? d : new Date(d);
@@ -50,6 +58,7 @@ export const addTransaction = (transaction: Omit<Transaction, 'id'>): Transactio
   const newTransaction = { ...transaction, id, numero, hash };
   transactions.push(newTransaction);
   saveTransactions(transactions);
+  if (isCloudSyncEnabled()) void cloudCreateTransaction(newTransaction);
   logAudit(
     AUDIT_ACTIONS.TX_CREATE,
     {
@@ -67,6 +76,7 @@ export const addTransaction = (transaction: Omit<Transaction, 'id'>): Transactio
 export const deleteTransaction = (id: string): void => {
   const tx = getTransactions().find((t) => t.id === id);
   saveTransactions(getTransactions().filter((t) => t.id !== id));
+  if (isCloudSyncEnabled()) void cloudDeleteTransaction(id);
   if (tx) {
     logAudit(AUDIT_ACTIONS.TX_DELETE, { id, type: tx.type, montantMAD: tx.montantMAD }, txDateStr(tx.date));
   }
@@ -77,6 +87,7 @@ export const updateTransaction = (id: string, updates: Partial<Transaction>): vo
   saveTransactions(
     getTransactions().map((t) => (t.id === id ? { ...t, ...updates } : t))
   );
+  if (isCloudSyncEnabled()) void cloudUpdateTransaction(id, updates);
   if (prev) {
     logAudit(
       AUDIT_ACTIONS.TX_UPDATE,
@@ -94,6 +105,7 @@ export const getExchangeRates = (): ExchangeRate[] => {
 
 export const saveExchangeRates = (rates: ExchangeRate[]): void => {
   localStorage.setItem('exchangeRates', JSON.stringify(rates));
+  if (isCloudSyncEnabled()) void cloudPutExchangeRates(rates);
   emitDataChanged();
 };
 
@@ -257,6 +269,7 @@ export const saveClosure = (closure: DailyClosure): boolean => {
     }
     localStorage.setItem(CLOSURES_KEY, JSON.stringify(closures));
     localStorage.setItem(LAST_CLOSURE_KEY, JSON.stringify(closure));
+    if (isCloudSyncEnabled()) void cloudUpsertClosure(closure);
     emitDataChanged();
     return true;
   } catch {

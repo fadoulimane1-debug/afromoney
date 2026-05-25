@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { Navbar } from './Navbar';
 import { AppFooter } from './AppFooter';
 import { NotificationToasts } from './NotificationToasts';
+import { CloudSyncProvider } from './CloudSyncProvider';
 import {
   initializeDefaultRates,
   getClosureByDate,
@@ -124,15 +125,17 @@ export function Layout() {
   }, [location.pathname]);
 
   return (
-    <div className="flex min-h-screen flex-col pt-16 lg:pt-20">
-      <Navbar />
+    <CloudSyncProvider>
+      <div className="flex min-h-screen flex-col pt-16 lg:pt-20">
+        <Navbar />
 
-      <main className="flex-1 overflow-x-hidden">
-        <Outlet />
-      </main>
+        <main className="flex-1 overflow-x-hidden">
+          <Outlet />
+        </main>
 
-      <AppFooter />
-      <NotificationToasts />
-    </div>
+        <AppFooter />
+        <NotificationToasts />
+      </div>
+    </CloudSyncProvider>
   );
 }

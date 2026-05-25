@@ -313,6 +313,79 @@ app.get('/api/soldes', async (req, res) => {
   }
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// CLÔTURES — /api/closures
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/closures', async (_req, res) => {
+  try {
+    const database = await getDb();
+    const rows = await database
+      .collection('closures')
+      .find({})
+      .sort({ date: -1 })
+      .toArray();
+    res.json(rows.map(serializeDoc));
+  } catch (err) {
+    console.error('[GET /api/closures]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/closures', async (req, res) => {
+  try {
+    const database = await getDb();
+    const doc = { ...req.body, updatedAt: new Date() };
+    if (!doc.date) {
+      res.status(400).json({ error: 'date requise' });
+      return;
+    }
+    await database.collection('closures').updateOne(
+      { date: doc.date },
+      { $set: doc },
+      { upsert: true },
+    );
+    const saved = await database.collection('closures').findOne({ date: doc.date });
+    res.json(serializeDoc(saved));
+  } catch (err) {
+    console.error('[PUT /api/closures]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PARAMÈTRES — taux de change partagés
+// ══════════════════════════════════════════════════════════════════════════════
+
+const SETTINGS_RATES_ID = 'exchange_rates';
+
+app.get('/api/settings/exchange-rates', async (_req, res) => {
+  try {
+    const database = await getDb();
+    const doc = await database.collection('settings').findOne({ _id: SETTINGS_RATES_ID });
+    res.json({ rates: doc?.rates ?? [] });
+  } catch (err) {
+    console.error('[GET /api/settings/exchange-rates]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/settings/exchange-rates', async (req, res) => {
+  try {
+    const database = await getDb();
+    const rates = req.body?.rates ?? [];
+    await database.collection('settings').updateOne(
+      { _id: SETTINGS_RATES_ID },
+      { $set: { rates, updatedAt: new Date() } },
+      { upsert: true },
+    );
+    res.json({ ok: true, count: rates.length });
+  } catch (err) {
+    console.error('[PUT /api/settings/exchange-rates]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Serializers (ObjectId → string, Date → ISO string) ────────────────────────
 
 function serializeTx(doc) {
@@ -355,6 +428,8 @@ async function createIndexes(database) {
     // Mouvements caisse
     await database.collection('mouvements_caisse').createIndex({ timestamp: -1 });
     await database.collection('mouvements_caisse').createIndex({ devise: 1 });
+
+    await database.collection('closures').createIndex({ date: 1 }, { unique: true });
 
     console.log('✅ MongoDB indexes ready');
   } catch (err) {

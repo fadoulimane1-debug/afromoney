@@ -1,4 +1,5 @@
-import { supabase } from '../lib/supabase';
+import { getSupabase, isSupabaseConfigured } from '../lib/supabase';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   Transaction,
   ReliquatDB,
@@ -7,6 +8,10 @@ import type {
   ClientDB,
   Utilisateur,
 } from '../types/supabase';
+
+function db(): SupabaseClient | null {
+  return isSupabaseConfigured() ? getSupabase() : null;
+}
 
 // ============================================================
 // TRANSACTIONS
@@ -23,6 +28,8 @@ export interface TransactionFilters {
 export async function createTransaction(
   data: Omit<Transaction, 'id' | 'created_at' | 'updated_at'>
 ): Promise<Transaction | null> {
+  const supabase = db();
+  if (!supabase) return null;
   try {
     const { data: result, error } = await supabase
       .from('transactions')
@@ -41,6 +48,8 @@ export async function createTransaction(
 export async function getTransactions(
   filters?: TransactionFilters
 ): Promise<Transaction[]> {
+  const supabase = db();
+  if (!supabase) return [];
   try {
     let query = supabase
       .from('transactions')
@@ -64,6 +73,8 @@ export async function getTransactions(
 }
 
 export async function getTransactionById(id: string): Promise<Transaction | null> {
+  const supabase = db();
+  if (!supabase) return null;
   try {
     const { data, error } = await supabase
       .from('transactions')
@@ -86,6 +97,8 @@ export async function getTransactionById(id: string): Promise<Transaction | null
 export async function createReliquat(
   data: Omit<ReliquatDB, 'id' | 'created_at' | 'updated_at'>
 ): Promise<ReliquatDB | null> {
+  const supabase = db();
+  if (!supabase) return null;
   try {
     const { data: result, error } = await supabase
       .from('reliquats')
@@ -105,6 +118,8 @@ export async function updateReliquat(
   id: string,
   data: Partial<Omit<ReliquatDB, 'id' | 'created_at'>>
 ): Promise<ReliquatDB | null> {
+  const supabase = db();
+  if (!supabase) return null;
   try {
     const { data: result, error } = await supabase
       .from('reliquats')
@@ -122,6 +137,8 @@ export async function updateReliquat(
 }
 
 export async function getReliquats(): Promise<ReliquatDB[]> {
+  const supabase = db();
+  if (!supabase) return [];
   try {
     const { data, error } = await supabase
       .from('reliquats')
@@ -156,6 +173,8 @@ export interface SoldesResult {
 export async function calculateSoldes(
   filters?: Pick<TransactionFilters, 'dateDebut' | 'dateFin'>
 ): Promise<SoldesResult | null> {
+  const supabase = db();
+  if (!supabase) return null;
   try {
     let query = supabase
       .from('transactions')
@@ -212,6 +231,8 @@ export async function getMouvementsCaisse(filters?: {
   dateFin?: string;
   devise?: string;
 }): Promise<MouvementCaisseDB[]> {
+  const supabase = db();
+  if (!supabase) return [];
   try {
     let query = supabase
       .from('mouvements_caisse')
@@ -234,6 +255,8 @@ export async function getMouvementsCaisse(filters?: {
 export async function createMouvementCaisse(
   data: Omit<MouvementCaisseDB, 'id' | 'created_at' | 'updated_at'>
 ): Promise<MouvementCaisseDB | null> {
+  const supabase = db();
+  if (!supabase) return null;
   try {
     const { data: result, error } = await supabase
       .from('mouvements_caisse')
@@ -254,6 +277,8 @@ export async function createMouvementCaisse(
 // ============================================================
 
 export async function getClients(): Promise<ClientDB[]> {
+  const supabase = db();
+  if (!supabase) return [];
   try {
     const { data, error } = await supabase
       .from('clients')
@@ -271,6 +296,8 @@ export async function getClients(): Promise<ClientDB[]> {
 export async function createClient(
   data: Omit<ClientDB, 'id' | 'created_at' | 'updated_at'>
 ): Promise<ClientDB | null> {
+  const supabase = db();
+  if (!supabase) return null;
   try {
     const { data: result, error } = await supabase
       .from('clients')
@@ -290,6 +317,8 @@ export async function updateClient(
   id: string,
   data: Partial<Omit<ClientDB, 'id' | 'created_at'>>
 ): Promise<ClientDB | null> {
+  const supabase = db();
+  if (!supabase) return null;
   try {
     const { data: result, error } = await supabase
       .from('clients')
@@ -311,6 +340,8 @@ export async function updateClient(
 // ============================================================
 
 export async function getUtilisateurs(): Promise<Utilisateur[]> {
+  const supabase = db();
+  if (!supabase) return [];
   try {
     const { data, error } = await supabase
       .from('utilisateurs')
@@ -332,6 +363,8 @@ export async function getUtilisateurs(): Promise<Utilisateur[]> {
 export async function createComptageCaisse(
   data: Omit<ComptageCaisse, 'id' | 'created_at' | 'updated_at'>
 ): Promise<ComptageCaisse | null> {
+  const supabase = db();
+  if (!supabase) return null;
   try {
     const { data: result, error } = await supabase
       .from('comptages_caisse')
@@ -351,6 +384,8 @@ export async function getComptagesCaisse(filters?: {
   dateDebut?: string;
   dateFin?: string;
 }): Promise<ComptageCaisse[]> {
+  const supabase = db();
+  if (!supabase) return [];
   try {
     let query = supabase
       .from('comptages_caisse')

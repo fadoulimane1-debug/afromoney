@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { TransactionForm } from '@/components/TransactionForm';
 import { getTransactions as getTransactionsLocal, deleteTransaction, updateTransaction, getExchangeRates, getReliquats, ajouterVersement } from '@/lib/storage';
-import { supabase } from '@/lib/supabase';
+import { getSupabase, isSupabaseConfigured } from '@/lib/supabase';
+import { isCloudSyncEnabled } from '@/lib/cloudConfig';
 import { getTransactions as fetchSupaTransactions, createTransaction as saveToSupabase } from '@/services/supabaseService';
 import type { Transaction as DBTransaction } from '@/types/supabase';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
@@ -224,21 +225,24 @@ function EditModal({ tx, onClose, onSave }: EditModalProps) {
       jour: jourFinal,
       mois: moisFinal,
     });
-    supabase.from('transactions').update({
-      statut: statutFinal,
-      note: form.note,
-      taux,
-      montant_mad: madFinal,
-      beneficiaire: form.beneficiaire || null,
-      operation: form.operation.trim() || tx.operation,
-      montant_a_payer: payeFinal ?? null,
-      caisse_depart: caisseDepart ?? null,
-      jour: jourFinal,
-      mois: moisFinal,
-      updated_at: new Date().toISOString(),
-    }).eq('id', tx.id).then(({ error }) => {
-      if (error) console.error('[supabase] updateTransaction:', error);
-    });
+    if (!isCloudSyncEnabled() && isSupabaseConfigured()) {
+      const supabase = getSupabase();
+      void supabase?.from('transactions').update({
+        statut: statutFinal,
+        note: form.note,
+        taux,
+        montant_mad: madFinal,
+        beneficiaire: form.beneficiaire || null,
+        operation: form.operation.trim() || tx.operation,
+        montant_a_payer: payeFinal ?? null,
+        caisse_depart: caisseDepart ?? null,
+        jour: jourFinal,
+        mois: moisFinal,
+        updated_at: new Date().toISOString(),
+      }).eq('id', tx.id).then(({ error }) => {
+        if (error) console.error('[supabase] updateTransaction:', error);
+      });
+    }
     onSave();
     onClose();
   }
@@ -642,11 +646,15 @@ export function Transactions() {
 
   async function loadTransactions() {
     setLoading(true);
-    const rows = await fetchSupaTransactions();
-    if (rows.length > 0) {
-      setAllTx(rows.map(dbToLocal));
-    } else {
+    if (isCloudSyncEnabled()) {
       setAllTx(getTransactionsLocal());
+    } else {
+      const rows = await fetchSupaTransactions();
+      if (rows.length > 0) {
+        setAllTx(rows.map(dbToLocal));
+      } else {
+        setAllTx(getTransactionsLocal());
+      }
     }
     setLoading(false);
   }
@@ -654,6 +662,12 @@ export function Transactions() {
   const refresh = () => { void loadTransactions(); };
 
   useEffect(() => { void loadTransactions(); }, []);
+
+  useEffect(() => {
+    const onData = () => setAllTx(getTransactionsLocal());
+    window.addEventListener('afromoney-data', onData);
+    return () => window.removeEventListener('afromoney-data', onData);
+  }, []);
 
   // Filters
   const [month,   setMonth]   = useState(dayjs().format('YYYY-MM'));
@@ -785,9 +799,12 @@ export function Transactions() {
 
   function handleDelete(id: string) {
     deleteTransaction(id);
-    supabase.from('transactions').delete().eq('id', id).then(({ error }) => {
-      if (error) console.error('[supabase] deleteTransaction:', error);
-    });
+    if (!isCloudSyncEnabled() && isSupabaseConfigured()) {
+      const supabase = getSupabase();
+      void supabase?.from('transactions').delete().eq('id', id).then(({ error }) => {
+        if (error) console.error('[supabase] deleteTransaction:', error);
+      });
+    }
     setConfirmDelete(null);
     refresh();
   }
@@ -802,7 +819,9 @@ export function Transactions() {
       <div className="page-content space-y-6">
       {/* ── Formulaire ── */}
       <TransactionForm onSuccess={async (tx) => {
-        await saveToSupabase(localToDb(tx));
+        if (!isCloudSyncEnabled() && isSupabaseConfigured()) {
+          await saveToSupabase(localToDb(tx));
+        }
         await loadTransactions();
       }} />
 
