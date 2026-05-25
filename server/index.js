@@ -77,6 +77,15 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', db: db ? 'connected' : 'disconnected' });
 });
 
+/** Racine : rappel que l’interface est sur Vercel (évite la confusion avec le build Vite). */
+app.get('/', (_req, res) => {
+  res.json({
+    service: 'AFROMONEY API',
+    ui: 'https://afromoney.vercel.app',
+    health: '/api/health',
+  });
+});
+
 // ── Test endpoint (dev only) ──────────────────────────────────────────────────
 
 app.get('/api/test-mongodb', async (_req, res) => {
