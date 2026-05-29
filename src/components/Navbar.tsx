@@ -207,7 +207,7 @@ function menuIsActive(pathname: string, items: NavLeaf[]) {
 function NavLogo() {
   return (
     <div className="flex shrink-0 items-center">
-     <Logo size="nav" className="drop-shadow-md scale-150" />
+    <Logo size="nav" className="drop-shadow-md scale-[2.2]" />
      </div>
   );
 }
