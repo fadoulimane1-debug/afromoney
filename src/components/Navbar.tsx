@@ -206,15 +206,9 @@ function menuIsActive(pathname: string, items: NavLeaf[]) {
 /* ── Logo mark ── */
 function NavLogo() {
   return (
-    <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
-      <Logo size="nav" className="drop-shadow-md" />
-      <div className="leading-none">
-        <p className="text-[12px] font-bold tracking-tight text-white sm:text-[13px]">AFROMONEY</p>
-        <p className="mt-0.5 text-[8px] font-medium uppercase tracking-[0.16em] text-white/55 sm:text-[9px]">
-          Bureau de change
-        </p>
-      </div>
-    </div>
+    <div className="flex shrink-0 items-center">
+     <Logo size="nav" className="drop-shadow-md scale-150" />
+     </div>
   );
 }
 
