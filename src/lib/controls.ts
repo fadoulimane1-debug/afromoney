@@ -32,6 +32,8 @@ export function validateOperationControls(input: {
     }
   }
 
+  // FIX BUG 2 — calculStock inclut maintenant DEPOT+ACHAT−VENTE−RETRAIT
+  // donc le stock disponible est correct pour autoriser les ventes
   if (input.type === 'VENTE' && input.devise !== 'MAD' && s.bloquerVenteStockInsuffisant) {
     const txs = getTransactions();
     const rates = getExchangeRates();
@@ -41,7 +43,7 @@ export function validateOperationControls(input: {
     if (input.montant > dispo + 0.0001) {
       issues.push({
         level: 'error',
-        message: `Stock ${input.devise} insuffisant (disponible : ${fmtDevise(dispo)}).`,
+        message: `Stock ${input.devise} insuffisant (disponible : ${fmtDevise(dispo)} ${input.devise}).`,
       });
     }
   }
