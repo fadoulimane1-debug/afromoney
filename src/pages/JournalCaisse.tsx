@@ -19,12 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import Papa from 'papaparse';
-import {
-  getMouvements,
-  getSoldeDevise,
-  appendAlimentation,
-  appendPrelevement,
-} from '@/lib/storage';
+
 import { DEVISES } from '@/lib/constants';
 import { fmt } from '@/lib/formatNumbers';
 import type { MouvementCaisse, MouvementType } from '@/types';
