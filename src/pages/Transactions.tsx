@@ -849,8 +849,11 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
         </form>
       </CardContent>
     </Card>
-    export function Transactions() {
+);
+  }
+}
+
+export function Transactions() {
   return <TransactionForm />;
 }
-  );
-}
+  
