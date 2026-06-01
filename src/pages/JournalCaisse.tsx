@@ -521,25 +521,30 @@ export function JournalCaisse() {
 
                          {/* Statut LOCKED */}
                           <td className="px-3 py-2.5 text-center">
-                            {getCurrentUser()?.role === 'ADMIN' ? (
-                              <button
-                                onClick={() => {
-                                  if (!window.confirm('Supprimer ce mouvement ?')) return;
-                                  const all = getMouvements().filter((x) => x.id !== m.id);
-                                  localStorage.setItem('mouvements_caisse', JSON.stringify(all));
-                                  refresh();
-                                }}
-                                className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-200"
-                              >
-                                🗑 Supprimer
-                              </button>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 ring-1 ring-zinc-200">
-                                <Lock size={9} />
-                                LOCK
-                              </span>
-                            )}
-                          </td>
+                           {getCurrentUser()?.role === 'ADMIN' ? (
+  <div className="flex flex-col items-center gap-1">
+    <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 ring-1 ring-zinc-200">
+      <Lock size={9} />
+      LOCK
+    </span>
+    <button
+      onClick={() => {
+        if (!window.confirm('Supprimer ce mouvement ?')) return;
+        const all = getMouvements().filter((x) => x.id !== m.id);
+        localStorage.setItem('mouvements_caisse', JSON.stringify(all));
+        refresh();
+      }}
+      className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-200"
+    >
+      🗑 Supprimer
+    </button>
+  </div>
+) : (
+  <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 ring-1 ring-zinc-200">
+    <Lock size={9} />
+    LOCK
+  </span>
+)}
                         </tr>
                       ))}
                     </tbody>
