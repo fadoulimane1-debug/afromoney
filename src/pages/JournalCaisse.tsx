@@ -521,7 +521,7 @@ export function JournalCaisse() {
 
                          {/* Statut LOCKED */}
                           <td className="px-3 py-2.5 text-center">
-                            {(m.type === 'ALIMENTATION' || m.type === 'PRELEVEMENT') && getCurrentUser()?.role === 'ADMIN' ? (
+                            {getCurrentUser()?.role === 'ADMIN' ? (
                               <button
                                 onClick={() => {
                                   if (!window.confirm('Supprimer ce mouvement ?')) return;
