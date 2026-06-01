@@ -66,8 +66,14 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** FIX BUG 3 — Ne pas appliquer le taux du jour pour DEPOT/RETRAIT */
+function isDepotRetrait(type: TransactionType): boolean {
+  return type === 'DEPOT' || type === 'RETRAIT';
+}
+
 function getDefaultTaux(devise: string, type: TransactionType): string {
-  if (devise === 'MAD') return '1';
+  // DEPOT/RETRAIT : taux = 1 par défaut, pas de taux achat/vente
+  if (devise === 'MAD' || isDepotRetrait(type)) return '1';
   const rates = getExchangeRates();
   const found = rates.find((r) => r.devise === devise);
   if (!found) return '1';
@@ -79,6 +85,7 @@ function getDefaultTaux(devise: string, type: TransactionType): string {
 function tauxLabel(type: TransactionType): string {
   if (type === 'ACHAT') return 'Taux achat *';
   if (type === 'VENTE') return 'Taux vente *';
+  if (isDepotRetrait(type)) return 'Taux (1 = sans conversion)';
   return 'Taux *';
 }
 
@@ -99,21 +106,20 @@ function validate(f: FormState): FormErrors {
   const m = parseInt(f.mois, 10);
   if (!f.jour || j < 1 || j > 31) e.jour = 'Jour 1–31';
   if (!f.mois || m < 1 || m > 12) e.mois = 'Mois 1–12';
-  // Identification client obligatoire si montant ≥ seuil (R5)
   const mad = parseFloat(f.montantMAD);
   if (Number.isFinite(mad) && mad >= SEUIL_IDENTIFICATION_MAD && !f.clientId) {
     e.clientId = `Identification client obligatoire (opération ≥ ${SEUIL_IDENTIFICATION_MAD.toLocaleString('fr-MA')} MAD — R5)`;
   }
   if (f.type === 'VENTE') {
-    const mad = Number.isFinite(parseMontantStr(f.montantMAD))
+    const madV = Number.isFinite(parseMontantStr(f.montantMAD))
       ? parseMontantStr(f.montantMAD)
       : parseMontantStr(f.montant) * parseMontantStr(f.taux);
     const paye = f.montantAPayer.trim() === '' ? 0 : parseMontantStr(f.montantAPayer);
-    if (!Number.isFinite(mad) || mad <= 0) {
+    if (!Number.isFinite(madV) || madV <= 0) {
       e.montantAPayer = 'Montant vente (MAD) requis';
     } else if (!Number.isFinite(paye) || paye < 0) {
       e.montantAPayer = 'Montant payé invalide';
-    } else if (paye > mad + 0.001) {
+    } else if (paye > madV + 0.001) {
       e.montantAPayer = 'Le montant payé ne peut pas dépasser le montant de la vente';
     }
   }
@@ -147,8 +153,6 @@ function emptyForm(): FormState {
 
 interface ToastState { msg: string; ok: boolean }
 
-/* ─── Small UI components ─── */
-
 function Toast({ toast }: { toast: ToastState }) {
   return (
     <div
@@ -165,17 +169,9 @@ function Toast({ toast }: { toast: ToastState }) {
 }
 
 function Field({
-  label,
-  error,
-  hint,
-  className,
-  children,
+  label, error, hint, className, children,
 }: {
-  label: string;
-  error?: string;
-  hint?: string;
-  className?: string;
-  children: React.ReactNode;
+  label: string; error?: string; hint?: string; className?: string; children: React.ReactNode;
 }) {
   return (
     <div className={className ? `space-y-1 ${className}` : 'space-y-1'}>
@@ -188,15 +184,9 @@ function Field({
 }
 
 function NativeSelect({
-  value,
-  onChange,
-  hasError = false,
-  children,
+  value, onChange, hasError = false, children,
 }: {
-  value: string;
-  onChange: (v: string) => void;
-  hasError?: boolean;
-  children: React.ReactNode;
+  value: string; onChange: (v: string) => void; hasError?: boolean; children: React.ReactNode;
 }) {
   return (
     <select
@@ -211,45 +201,29 @@ function NativeSelect({
   );
 }
 
-/* ─── ClientSelector ─── */
-
 function ClientSelector({
-  value,
-  onChange,
-  hasError,
-  required,
+  value, onChange, hasError, required,
 }: {
-  value: string;
-  onChange: (id: string, client: Client | null) => void;
-  hasError?: boolean;
-  required?: boolean;
+  value: string; onChange: (id: string, client: Client | null) => void; hasError?: boolean; required?: boolean;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const clients = getClients();
-
   const selected = clients.find((c) => c.id === value) ?? null;
-
   const filtered = clients.filter((c) => {
     const q = search.toLowerCase();
-    return (
-      !q ||
-      c.nom.toLowerCase().includes(q) ||
-      c.pieceNumero.toLowerCase().includes(q)
-    );
+    return !q || c.nom.toLowerCase().includes(q) || c.pieceNumero.toLowerCase().includes(q);
   });
-
   const CAT_BADGE: Record<string, string> = {
     STANDARD: 'bg-zinc-100 text-zinc-600',
     HABITUEL: 'bg-blue-100 text-blue-700',
-    AMI:      'bg-amber-100 text-amber-700',
+    AMI: 'bg-amber-100 text-amber-700',
   };
   const CAT_EMOJI: Record<string, string> = { STANDARD: '○', HABITUEL: '✅', AMI: '⭐' };
 
   return (
     <div className="relative">
-      {/* Trigger */}
       {selected ? (
         <div className={`flex h-9 items-center gap-2 rounded-md border bg-white px-3 text-sm ${hasError ? 'border-red-400' : 'border-zinc-300'}`}>
           <UserCheck size={13} className="shrink-0 text-blue-500" />
@@ -257,11 +231,7 @@ function ClientSelector({
           <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${CAT_BADGE[selected.categorie]}`}>
             {CAT_EMOJI[selected.categorie]} {selected.categorie}
           </span>
-          <button
-            type="button"
-            onClick={() => { onChange('', null); setSearch(''); }}
-            className="text-zinc-400 hover:text-zinc-700"
-          >
+          <button type="button" onClick={() => { onChange('', null); setSearch(''); }} className="text-zinc-400 hover:text-zinc-700">
             <XIcon size={13} />
           </button>
         </div>
@@ -272,21 +242,15 @@ function ClientSelector({
           className={`flex h-9 w-full items-center gap-2 rounded-md border bg-white px-3 text-sm text-left transition-colors hover:border-zinc-400 ${hasError ? 'border-red-400 bg-red-50' : 'border-zinc-300'}`}
         >
           <Search size={13} className="shrink-0 text-zinc-400" />
-          <span className={required ? 'text-zinc-400' : 'text-zinc-400'}>
+          <span className="text-zinc-400">
             {required ? 'Sélectionner client (obligatoire ≥10k)…' : 'Sélectionner client (optionnel)…'}
           </span>
         </button>
       )}
-
-      {/* Dropdown */}
       {open && !selected && (
         <div className="absolute left-0 top-full z-40 mt-1 w-full min-w-[280px] rounded-lg border border-zinc-300 bg-white py-1 shadow-xl">
           <div className="px-2 pb-1 pt-1">
-            <input
-              autoFocus
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+            <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Rechercher nom, N° pièce..."
               className="flex h-8 w-full rounded-md border border-zinc-300 bg-zinc-50 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
@@ -296,10 +260,7 @@ function ClientSelector({
               <p className="px-3 py-2 text-xs text-zinc-400">Aucun client trouvé.</p>
             ) : (
               filtered.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => { onChange(c.id, c); setOpen(false); setSearch(''); }}
+                <button key={c.id} type="button" onClick={() => { onChange(c.id, c); setOpen(false); setSearch(''); }}
                   className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-100"
                 >
                   <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${CAT_BADGE[c.categorie]}`}>
@@ -312,9 +273,7 @@ function ClientSelector({
             )}
           </div>
           <div className="border-t border-zinc-100 px-2 pb-2 pt-1">
-            <button
-              type="button"
-              onClick={() => { setOpen(false); navigate('/clients'); }}
+            <button type="button" onClick={() => { setOpen(false); navigate('/clients'); }}
               className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50"
             >
               + Gérer la base clients →
@@ -334,18 +293,14 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ─── Main form ─── */
-
 export function TransactionForm({ onSuccess }: TransactionFormProps) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const opDirty = useRef(false);
-  /** false = montant payé suit le montant de vente (taux × quantité) */
   const payeDirty = useRef(false);
 
-  /* Sync jour/mois from date */
   useEffect(() => {
     const d = dayjs(form.date);
     if (d.isValid()) {
@@ -353,12 +308,27 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
     }
   }, [form.date]);
 
-  /* Auto-fill taux when devise or type changes */
+  /**
+   * FIX BUG 3 — Auto-fill taux SEULEMENT pour ACHAT/VENTE.
+   * Pour DEPOT/RETRAIT : on met taux=1 et on ne l'écrase plus au changement de devise.
+   */
   useEffect(() => {
-    setForm((f) => ({ ...f, taux: getDefaultTaux(f.devise, f.type) }));
+    setForm((f) => {
+      // Si DEPOT/RETRAIT et taux déjà saisi manuellement (non vide), ne pas écraser
+      if (isDepotRetrait(f.type)) {
+        return { ...f, taux: '1' };
+      }
+      return { ...f, taux: getDefaultTaux(f.devise, f.type) };
+    });
   }, [form.devise, form.type]);
 
-  /* Auto-calculate montantMAD ; VENTE : montant payé = montant vente tant que non modifié */
+  /**
+   * FIX BUG 1 — Calcul montantMAD :
+   * - ACHAT/VENTE : montant × taux (comportement normal)
+   * - DEPOT/RETRAIT en MAD : montantMAD = montant saisi (taux=1, pas de conversion)
+   * - DEPOT/RETRAIT en devise étrangère : montantMAD = montant × taux
+   *   MAIS si taux = 1, montantMAD = montant (pas de conversion forcée)
+   */
   useEffect(() => {
     const m = parseMontantStr(form.montant);
     const t = parseMontantStr(form.taux);
@@ -377,7 +347,6 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
     }
   }, [form.montant, form.taux, form.type]);
 
-  /* VENTE : statut auto PAYÉ / NON-PAYÉ selon reste dû */
   useEffect(() => {
     if (form.type !== 'VENTE') return;
     const mad = parseMontantStr(form.montantMAD);
@@ -388,7 +357,6 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
     setForm((f) => (f.statut === statut ? f : { ...f, statut }));
   }, [form.type, form.montantMAD, form.montantAPayer]);
 
-  /* Auto-fill operation libellé */
   useEffect(() => {
     if (opDirty.current) return;
     const m = parseFloat(form.montant);
@@ -407,11 +375,7 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
   function applyPaiementCompletVente() {
     if (!hasMAD) return;
     payeDirty.current = false;
-    setForm((f) => ({
-      ...f,
-      montantAPayer: formatMontantFr(montantMADNum),
-      statut: 'PAYÉ',
-    }));
+    setForm((f) => ({ ...f, montantAPayer: formatMontantFr(montantMADNum), statut: 'PAYÉ' }));
     setErrors((e) => ({ ...e, montantAPayer: undefined }));
   }
 
@@ -433,10 +397,31 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
     const now = dayjs();
     const d = dayjs(form.date).hour(now.hour()).minute(now.minute()).second(now.second());
     const employe = UTILISATEURS_TEST.find((u) => u.id === form.employeId);
-    const montantMADFinal =
-      form.montantMAD.trim() !== '' && Number.isFinite(parseMontantStr(form.montantMAD))
-        ? parseMontantStr(form.montantMAD)
-        : parseMontantStr(form.montant) * parseMontantStr(form.taux);
+
+    /**
+     * FIX BUG 1 — montantMAD final :
+     * - DEPOT/RETRAIT avec taux=1 : montantMAD = montant (pas de conversion)
+     * - DEPOT/RETRAIT avec taux saisi : montant × taux
+     * - ACHAT/VENTE : comportement normal
+     */
+    const montantNum = parseFloat(form.montant);
+    const tauxNum = parseFloat(form.taux);
+    let montantMADFinal: number;
+
+    if (isDepotRetrait(form.type)) {
+      // Pour DEPOT/RETRAIT : on respecte le taux saisi par l'utilisateur
+      // Si taux=1, montantMAD = montant (dans la devise saisie, équivalence 1:1)
+      if (form.montantMAD.trim() !== '' && Number.isFinite(parseMontantStr(form.montantMAD))) {
+        montantMADFinal = parseMontantStr(form.montantMAD);
+      } else {
+        montantMADFinal = montantNum * tauxNum;
+      }
+    } else {
+      montantMADFinal =
+        form.montantMAD.trim() !== '' && Number.isFinite(parseMontantStr(form.montantMAD))
+          ? parseMontantStr(form.montantMAD)
+          : montantNum * tauxNum;
+    }
 
     let statutFinal = form.statut;
     let montantAPayer: number | undefined;
@@ -448,13 +433,9 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
       const ap = parseFloat(form.montantAPayer);
       montantAPayer = Number.isFinite(ap) ? ap : undefined;
     }
-    const caisseDepart =
-      form.caisseDepart.trim() !== '' ? parseFloat(form.caisseDepart) : undefined;
 
-    const montantNum = parseFloat(form.montant);
-    const tauxNum = parseFloat(form.taux);
+    const caisseDepart = form.caisseDepart.trim() !== '' ? parseFloat(form.caisseDepart) : undefined;
 
-    // Bloquer paiement partiel pour client STANDARD
     if (form.type === 'VENTE' && form.clientId) {
       const selectedClient = getClients().find((c) => c.id === form.clientId);
       if (selectedClient?.categorie === 'STANDARD') {
@@ -494,21 +475,15 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
       employeId: form.employeId,
       employeNom: employe?.nom,
       type: form.type,
-      operation:
-        form.operation.trim() ||
-        buildDefaultOperation(form.type, montantNum, form.devise),
+      operation: form.operation.trim() || buildDefaultOperation(form.type, montantNum, form.devise),
       devise: form.devise.toUpperCase(),
       montant: montantNum,
       taux: tauxNum,
       montantMAD: montantMADFinal,
-      montantAPayer:
-        montantAPayer !== undefined && Number.isFinite(montantAPayer) ? montantAPayer : undefined,
+      montantAPayer: montantAPayer !== undefined && Number.isFinite(montantAPayer) ? montantAPayer : undefined,
       note: form.note.trim(),
       statut: statutFinal,
-      beneficiaire:
-        form.type === 'DEPOT' && form.beneficiaire.trim()
-          ? form.beneficiaire.trim()
-          : undefined,
+      beneficiaire: form.type === 'DEPOT' && form.beneficiaire.trim() ? form.beneficiaire.trim() : undefined,
       clientId: form.clientId || undefined,
     });
 
@@ -530,13 +505,17 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
 
   const montantMADNum = parseMontantStr(form.montantMAD);
   const hasMAD = Number.isFinite(montantMADNum) && montantMADNum > 0;
-  const payeNum =
-    form.montantAPayer.trim() === '' ? 0 : parseMontantStr(form.montantAPayer);
+  const payeNum = form.montantAPayer.trim() === '' ? 0 : parseMontantStr(form.montantAPayer);
   const payeOk = Number.isFinite(payeNum) && payeNum >= 0;
   const resteNonPayeAffiche =
     form.type === 'VENTE' && hasMAD && payeOk
       ? formatMontantFr(Math.max(0, Math.round((montantMADNum - payeNum) * 100) / 100))
       : '';
+
+  /** FIX BUG 3 — Pour DEPOT/RETRAIT, montant affiché dans la devise, pas en MAD */
+  const isDepotRetraitCurrent = isDepotRetrait(form.type);
+  const montantDeviseNum = parseMontantStr(form.montant);
+  const hasDevise = Number.isFinite(montantDeviseNum) && montantDeviseNum > 0;
 
   return (
     <Card className="border-zinc-200 shadow-sm">
@@ -558,56 +537,35 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
           )}
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
-
-            {/* ── Section 1: Identification journée ── */}
             <SectionLabel>Identification journée</SectionLabel>
 
             <Field label="Jour *" error={errors.jour} hint="Auto-rempli depuis la date">
-              <Input
-                type="number"
-                min={1}
-                max={31}
-                value={form.jour}
+              <Input type="number" min={1} max={31} value={form.jour}
                 onChange={(e) => set('jour', e.target.value)}
-                className={errors.jour ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+                className={errors.jour ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
             <Field label="Mois *" error={errors.mois} hint="Auto-rempli depuis la date">
-              <Input
-                type="number"
-                min={1}
-                max={12}
-                value={form.mois}
+              <Input type="number" min={1} max={12} value={form.mois}
                 onChange={(e) => set('mois', e.target.value)}
-                className={errors.mois ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+                className={errors.mois ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
             <Field label="Date complète *" error={errors.date}>
-              <Input
-                type="date"
-                value={form.date}
-                onChange={(e) => set('date', e.target.value)}
+              <Input type="date" value={form.date} onChange={(e) => set('date', e.target.value)}
                 max={todayStr()}
-                className={errors.date ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+                className={errors.date ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
             <Field label="Moment" hint="Phase de la journée">
               <div className="flex h-9 gap-0 overflow-hidden rounded-md border border-zinc-300 bg-white text-sm">
                 {(['MATIN', 'JOURNEE', 'SOIR'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => set('moment', m)}
+                  <button key={m} type="button" onClick={() => set('moment', m)}
                     className={[
                       'flex-1 border-r border-zinc-200 px-1 text-xs font-semibold transition-colors last:border-r-0',
                       form.moment === m
-                        ? m === 'MATIN'
-                          ? 'bg-sky-600 text-white'
-                          : m === 'JOURNEE'
-                          ? 'bg-indigo-600 text-white'
+                        ? m === 'MATIN' ? 'bg-sky-600 text-white'
+                          : m === 'JOURNEE' ? 'bg-indigo-600 text-white'
                           : 'bg-violet-600 text-white'
                         : 'text-zinc-500 hover:bg-zinc-50',
                     ].join(' ')}
@@ -618,15 +576,10 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
               </div>
             </Field>
 
-            {/* ── Section 2: Opération ── */}
             <SectionLabel>Détails de l'opération</SectionLabel>
 
             <Field label="Employé *" error={errors.employeId}>
-              <NativeSelect
-                value={form.employeId}
-                onChange={(v) => set('employeId', v)}
-                hasError={!!errors.employeId}
-              >
+              <NativeSelect value={form.employeId} onChange={(v) => set('employeId', v)} hasError={!!errors.employeId}>
                 {UTILISATEURS_TEST.map((u) => (
                   <option key={u.id} value={u.id}>{u.nom}</option>
                 ))}
@@ -646,6 +599,8 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
                     return {
                       ...f,
                       type,
+                      // FIX: reset taux à 1 pour DEPOT/RETRAIT, sinon taux par devise
+                      taux: isDepotRetrait(type) ? '1' : getDefaultTaux(f.devise, type),
                       montantAPayer: type === 'VENTE' ? payeVente : '',
                       statut:
                         type === 'VENTE' && madOk
@@ -666,146 +621,105 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
             </Field>
 
             <Field label="Devise *" error={errors.devise}>
-              <NativeSelect
-                value={form.devise}
-                onChange={(v) => set('devise', v)}
-                hasError={!!errors.devise}
-              >
+              <NativeSelect value={form.devise} onChange={(v) => set('devise', v)} hasError={!!errors.devise}>
                 {DEVISES.map((d) => (
                   <option key={d} value={d}>{d}</option>
                 ))}
               </NativeSelect>
             </Field>
 
-            <Field label="Montant / Quantité *" error={errors.montant}>
-              <Input
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="Ex. 500"
-                value={form.montant}
-                onChange={(e) => set('montant', e.target.value)}
-                className={errors.montant ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+            <Field
+              label={isDepotRetraitCurrent ? `Montant (${form.devise}) *` : 'Montant / Quantité *'}
+              error={errors.montant}
+            >
+              <Input type="number" step="0.01" min="0.01"
+                placeholder={isDepotRetraitCurrent ? `Ex. 200 ${form.devise}` : 'Ex. 500'}
+                value={form.montant} onChange={(e) => set('montant', e.target.value)}
+                className={errors.montant ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
-            {/* ── Section 3: Calcul MAD ── */}
-            <SectionLabel>Calcul MAD</SectionLabel>
+            {/* FIX BUG 3 — Section calcul MAD : masquée/adaptée pour DEPOT/RETRAIT */}
+            <SectionLabel>
+              {isDepotRetraitCurrent ? 'Conversion (optionnel)' : 'Calcul MAD'}
+            </SectionLabel>
 
             <Field
               label={tauxLabel(form.type)}
               error={errors.taux}
               hint={
-                form.devise !== 'MAD'
-                  ? `Auto-rempli : ${form.type === 'ACHAT' ? 'taux achat' : form.type === 'VENTE' ? 'taux vente' : 'taux jour'}`
-                  : 'MAD → taux 1'
+                isDepotRetraitCurrent
+                  ? 'Laisser 1 si pas de conversion MAD nécessaire'
+                  : form.devise !== 'MAD'
+                    ? `Auto-rempli : ${form.type === 'ACHAT' ? 'taux achat' : form.type === 'VENTE' ? 'taux vente' : 'taux jour'}`
+                    : 'MAD → taux 1'
               }
             >
-              <Input
-                type="number"
-                step="0.0001"
-                min="0.0001"
-                value={form.taux}
+              <Input type="number" step="0.0001" min="0.0001" value={form.taux}
                 onChange={(e) => set('taux', e.target.value)}
-                className={errors.taux ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+                className={errors.taux ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
             <Field
-              label={form.type === 'VENTE' ? 'Montant de vente (MAD)' : 'Montant en MAD'}
-              hint="Prix vente × quantité (devise)"
+              label={
+                isDepotRetraitCurrent
+                  ? form.devise === 'MAD'
+                    ? 'Montant MAD'
+                    : `Équivalent MAD (taux × montant)`
+                  : form.type === 'VENTE'
+                    ? 'Montant de vente (MAD)'
+                    : 'Montant en MAD'
+              }
+              hint={isDepotRetraitCurrent && form.devise !== 'MAD' ? 'Info secondaire — opération principale en devise' : 'Prix vente × quantité (devise)'}
             >
               <div className="relative">
-                <Input
-                  type="text"
-                  readOnly
+                <Input type="text" readOnly
                   value={hasMAD ? formatMontantFr(montantMADNum) : '—'}
-                  className="cursor-default border-zinc-200 bg-zinc-50 text-right font-bold tabular-nums text-zinc-900 focus:ring-0"
-                />
-                <Calculator
-                  size={12}
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400"
-                />
+                  className="cursor-default border-zinc-200 bg-zinc-50 text-right font-bold tabular-nums text-zinc-900 focus:ring-0" />
+                <Calculator size={12} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400" />
               </div>
             </Field>
 
             {form.type === 'VENTE' && (
               <>
-                <Field
-                  label="Montant payé (MAD)"
-                  error={errors.montantAPayer}
-                  hint="Par défaut = vente — réduire si partiel"
-                >
+                <Field label="Montant payé (MAD)" error={errors.montantAPayer} hint="Par défaut = vente — réduire si partiel">
                   <div className="flex gap-1.5">
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      value={form.montantAPayer}
-                      onChange={(e) => {
-                        payeDirty.current = true;
-                        set('montantAPayer', e.target.value);
-                      }}
+                    <Input type="text" inputMode="decimal" value={form.montantAPayer}
+                      onChange={(e) => { payeDirty.current = true; set('montantAPayer', e.target.value); }}
                       onBlur={() => {
                         if (form.montantAPayer.trim() === '') {
                           payeDirty.current = true;
                           set('montantAPayer', formatMontantFr(0));
                         }
                       }}
-                      className={
-                        errors.montantAPayer
-                          ? 'min-w-0 flex-1 border-red-400 bg-red-50 text-right text-sm font-bold tabular-nums text-zinc-900 focus:ring-red-400'
-                          : 'min-w-0 flex-1 bg-white text-right text-sm font-bold tabular-nums text-zinc-900'
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={!hasMAD}
+                      className={errors.montantAPayer
+                        ? 'min-w-0 flex-1 border-red-400 bg-red-50 text-right text-sm font-bold tabular-nums text-zinc-900 focus:ring-red-400'
+                        : 'min-w-0 flex-1 bg-white text-right text-sm font-bold tabular-nums text-zinc-900'} />
+                    <Button type="button" variant="outline" size="sm" disabled={!hasMAD}
                       onClick={applyPaiementCompletVente}
-                      className="shrink-0 px-2 text-[10px] font-semibold"
-                      title="Paiement total — statut PAYÉ"
-                    >
+                      className="shrink-0 px-2 text-[10px] font-semibold" title="Paiement total — statut PAYÉ">
                       Complet
                     </Button>
                   </div>
                 </Field>
-                <Field
-                  label="Reste non payé (MAD)"
-                  hint="Vente − payé"
-                >
-                  <Input
-                    type="text"
-                    readOnly
+                <Field label="Reste non payé (MAD)" hint="Vente − payé">
+                  <Input type="text" readOnly
                     value={resteNonPayeAffiche === '' ? '—' : resteNonPayeAffiche}
-                    className="cursor-default border-zinc-200 bg-zinc-50 text-right text-sm font-bold tabular-nums text-zinc-900 focus:ring-0"
-                  />
+                    className="cursor-default border-zinc-200 bg-zinc-50 text-right text-sm font-bold tabular-nums text-zinc-900 focus:ring-0" />
                 </Field>
               </>
             )}
 
-            {/* ── Section 4: Statut & paiement ── */}
             <SectionLabel>Statut & paiement</SectionLabel>
 
             {form.type === 'VENTE' ? (
               <Field label="Statut du solde *" error={errors.statut} hint="Automatique selon le reste">
-                <Input
-                  type="text"
-                  readOnly
-                  value={form.statut}
-                  className={`cursor-default border-zinc-200 bg-zinc-50 font-bold focus:ring-0 ${
-                    form.statut === 'PAYÉ' ? 'text-emerald-700' : 'text-red-700'
-                  }`}
-                />
+                <Input type="text" readOnly value={form.statut}
+                  className={`cursor-default border-zinc-200 bg-zinc-50 font-bold focus:ring-0 ${form.statut === 'PAYÉ' ? 'text-emerald-700' : 'text-red-700'}`} />
               </Field>
             ) : (
               <>
                 <Field label="Statut *" error={errors.statut}>
-                  <NativeSelect
-                    value={form.statut}
-                    onChange={(v) => set('statut', v as TxStatut)}
-                    hasError={!!errors.statut}
-                  >
+                  <NativeSelect value={form.statut} onChange={(v) => set('statut', v as TxStatut)} hasError={!!errors.statut}>
                     {STATUTS.map((s) => (
                       <option key={s} value={s}>{s}</option>
                     ))}
@@ -813,14 +727,8 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
                 </Field>
                 {form.statut === 'CRÉDIT' && (
                   <Field label="À payer (MAD)" hint="Montant restant dû pour ce crédit">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="Ex. 1 150,00"
-                      value={form.montantAPayer}
-                      onChange={(e) => set('montantAPayer', e.target.value)}
-                    />
+                    <Input type="number" step="0.01" min="0" placeholder="Ex. 1 150,00"
+                      value={form.montantAPayer} onChange={(e) => set('montantAPayer', e.target.value)} />
                   </Field>
                 )}
               </>
@@ -828,16 +736,11 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
 
             {form.type === 'DEPOT' && (
               <Field label="Bénéficiaire" hint="Optionnel">
-                <Input
-                  type="text"
-                  placeholder="Nom ou référence"
-                  value={form.beneficiaire}
-                  onChange={(e) => set('beneficiaire', e.target.value)}
-                />
+                <Input type="text" placeholder="Nom ou référence" value={form.beneficiaire}
+                  onChange={(e) => set('beneficiaire', e.target.value)} />
               </Field>
             )}
 
-            {/* ── Section 5: Identification client ── */}
             <SectionLabel>
               {hasMAD && montantMADNum >= SEUIL_IDENTIFICATION_MAD
                 ? `⚠️ Identification client (R5 — ≥ ${SEUIL_IDENTIFICATION_MAD.toLocaleString('fr-MA')} MAD)`
@@ -854,125 +757,92 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
               }
               className="col-span-full"
             >
-              <ClientSelector
-                value={form.clientId}
-                onChange={(id) => {
-                  set('clientId', id);
-                }}
+              <ClientSelector value={form.clientId} onChange={(id) => set('clientId', id)}
                 hasError={!!errors.clientId}
-                required={hasMAD && montantMADNum >= SEUIL_IDENTIFICATION_MAD}
-              />
+                required={hasMAD && montantMADNum >= SEUIL_IDENTIFICATION_MAD} />
             </Field>
           </div>
 
-          {/* ── Section 5: Libellé & Note ── */}
           <div className="mt-1 border-b border-zinc-100 pb-1 pt-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-              Libellé & note
-            </span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Libellé & note</span>
           </div>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field
-              label="Opération * (libellé synthétique)"
-              hint="Auto-rempli — modifiable (ex. : « Achat EUR 500 — client Ahmed »)"
-            >
-              <textarea
-                rows={2}
-                placeholder="Ex. Vente EUR 300 — client vitrine"
-                value={form.operation}
-                onChange={(e) => {
-                  opDirty.current = true;
-                  set('operation', e.target.value);
-                }}
+            <Field label="Opération * (libellé synthétique)" hint="Auto-rempli — modifiable">
+              <textarea rows={2} placeholder="Ex. Vente EUR 300 — client vitrine" value={form.operation}
+                onChange={(e) => { opDirty.current = true; set('operation', e.target.value); }}
                 className="flex w-full resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900
-                  placeholder:text-zinc-400 shadow-sm
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+                  placeholder:text-zinc-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
             </Field>
-
             <Field label="Note" hint="Optionnel — contrepartie, détail crédit, remarque">
-              <textarea
-                rows={2}
-                placeholder="Contrepartie, détail, numéro de bon…"
-                value={form.note}
+              <textarea rows={2} placeholder="Contrepartie, détail, numéro de bon…" value={form.note}
                 onChange={(e) => set('note', e.target.value)}
                 className="flex w-full resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900
-                  placeholder:text-zinc-400 shadow-sm
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+                  placeholder:text-zinc-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
             </Field>
           </div>
 
-          {/* ── Résumé avant envoi ── */}
-          {hasMAD && form.montant && form.devise && (
+          {/* Résumé avant envoi — adapté pour DEPOT/RETRAIT */}
+          {form.montant && form.devise && (hasMAD || (isDepotRetraitCurrent && hasDevise)) && (
             <div className="mt-4 flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-2.5 text-sm">
-              <span className="font-medium text-blue-800">
-                {TYPE_OPERATION_LABEL[form.type]}
-              </span>
-              <span className="text-blue-600">
-                {parseFloat(form.montant).toLocaleString('fr-MA')} {form.devise}
-              </span>
-              <span className="text-zinc-400">×</span>
-              <span className="text-blue-600">{fmtRate(parseFloat(form.taux) || 0)}</span>
-              <span className="text-zinc-400">=</span>
+              <span className="font-medium text-blue-800">{TYPE_OPERATION_LABEL[form.type]}</span>
               <span className="font-bold text-blue-900">
-                {montantMADNum.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                {isDepotRetraitCurrent
+                  ? `${montantDeviseNum.toLocaleString('fr-MA')} ${form.devise}`
+                  : `${parseFloat(form.montant).toLocaleString('fr-MA')} ${form.devise}`
+                }
               </span>
+              {!isDepotRetraitCurrent && (
+                <>
+                  <span className="text-zinc-400">×</span>
+                  <span className="text-blue-600">{fmtRate(parseFloat(form.taux) || 0)}</span>
+                  <span className="text-zinc-400">=</span>
+                  <span className="font-bold text-blue-900">
+                    {montantMADNum.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                  </span>
+                </>
+              )}
+              {isDepotRetraitCurrent && form.devise !== 'MAD' && parseFloat(form.taux) !== 1 && hasMAD && (
+                <>
+                  <span className="text-zinc-400">≈</span>
+                  <span className="text-blue-600 text-xs">
+                    {montantMADNum.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                  </span>
+                </>
+              )}
               {form.type === 'VENTE' && (
                 <>
                   <span className="text-zinc-400">|</span>
                   <span className="text-blue-700">
                     Payé{' '}
-                    {(form.montantAPayer.trim() === ''
-                      ? 0
-                      : parseMontantStr(form.montantAPayer)
-                    ).toLocaleString('fr-MA', { minimumFractionDigits: 2 })}{' '}
-                    MAD
+                    {(form.montantAPayer.trim() === '' ? 0 : parseMontantStr(form.montantAPayer))
+                      .toLocaleString('fr-MA', { minimumFractionDigits: 2 })}{' '}MAD
                   </span>
                   {resteNonPayeAffiche !== '' && (
-                    <span
-                      className={
-                        montantMADNum - payeNum <= 0.001
-                          ? 'font-semibold text-emerald-800'
-                          : 'font-semibold text-red-700'
-                      }
-                    >
+                    <span className={montantMADNum - payeNum <= 0.001 ? 'font-semibold text-emerald-800' : 'font-semibold text-red-700'}>
                       Reste dû {resteNonPayeAffiche} MAD
                     </span>
                   )}
                 </>
               )}
-              <span
-                className={`ml-auto rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
-                  form.statut === 'PAYÉ'
-                    ? 'bg-emerald-100 text-emerald-800 ring-emerald-200'
-                    : form.statut === 'CRÉDIT'
+              <span className={`ml-auto rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
+                form.statut === 'PAYÉ'
+                  ? 'bg-emerald-100 text-emerald-800 ring-emerald-200'
+                  : form.statut === 'CRÉDIT'
                     ? 'bg-amber-100 text-amber-800 ring-amber-200'
                     : 'bg-red-100 text-red-800 ring-red-200'
-                }`}
-              >
+              }`}>
                 {form.statut}
               </span>
             </div>
           )}
 
-          {/* ── Boutons ── */}
           <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleReset}
-              className="gap-1.5 text-zinc-600"
-            >
+            <Button type="button" variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-zinc-600">
               <RotateCcw size={13} /> Réinitialiser
             </Button>
-            <Button
-              type="submit"
-              size="sm"
-              className="gap-1.5 bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
+            <Button type="submit" size="sm"
+              className="gap-1.5 bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
               <Save size={13} /> Enregistrer
             </Button>
           </div>
