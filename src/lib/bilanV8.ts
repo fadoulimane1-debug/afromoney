@@ -2,6 +2,7 @@ import dayjs from 'dayjs';
 import type { Transaction, TransactionType } from '@/types';
 import { DEVISES_CAISSE_V8 } from '@/lib/constants';
 import { filterTransactionsComptables } from '@/lib/transactionFilters';
+import { getMouvements } from '@/lib/storage';
 
 const MOIS_FR = [
   'Janvier',
@@ -24,7 +25,6 @@ function sumMontantMadForType(transactions: Transaction[], type: TransactionType
     .reduce((s, t) => s + t.montantMAD, 0);
 }
 
-/** Une ligne de la feuille « BILAN MENSUEL » V8. */
 export interface BilanMensuelV8Row {
   monthIndex: number;
   label: string;
@@ -38,7 +38,6 @@ export interface BilanMensuelV8Row {
   nbOps: number;
 }
 
-/** 12 mois pour une année — même formules que le classeur (BÉNÉFICE = ventes − achats − charges ; marge = BÉNÉFICE / ventes). */
 export function buildBilanAnnuelV8(transactions: Transaction[], year: number): BilanMensuelV8Row[] {
   return MOIS_FR.map((nom, i) => {
     const txM = transactions.filter((t) => {
@@ -67,7 +66,6 @@ export function buildBilanAnnuelV8(transactions: Transaction[], year: number): B
   });
 }
 
-/** Totaux colonne droite feuille CAISSE — journée calendaire. */
 export interface CaisseJourV8 {
   dateLabel: string;
   totalAchatsMad: number;
@@ -110,9 +108,14 @@ export interface RecapDeviseJourRow {
   achatsJour: number;
   ventesJour: number;
   retraitsJour: number;
+  alimentationsJour: number;
+  stockSoir: number;
 }
 
-/** Mouvements du jour par devise (bloc récap V8), devises CAISSE uniquement. */
+/**
+ * FIX — Stock soir inclut maintenant:
+ * ACHAT + DEPOT (transactions) + ALIMENTATION (mouvements caisse) − VENTE − RETRAIT − PRELEVEMENT
+ */
 export function recapDeviseJournee(
   transactions: Transaction[],
   day: dayjs.Dayjs = dayjs()
@@ -120,24 +123,54 @@ export function recapDeviseJournee(
   const txJ = filterTransactionsComptables(
     transactions.filter((t) => dayjs(t.date).isSame(day, 'day')),
   );
-  const map = new Map<string, { achats: number; ventes: number; retraits: number }>();
+
+  // Mouvements caisse du jour (alimentations/prélèvements)
+  const mouvements = getMouvements().filter((m) =>
+    dayjs(m.timestamp).isSame(day, 'day')
+  );
+
+  const map = new Map<string, {
+    achats: number;
+    ventes: number;
+    retraits: number;
+    depots: number;
+    alimentations: number;
+    prelevements: number;
+  }>();
+
   for (const d of DEVISES_CAISSE_V8) {
-    map.set(d, { achats: 0, ventes: 0, retraits: 0 });
+    map.set(d, { achats: 0, ventes: 0, retraits: 0, depots: 0, alimentations: 0, prelevements: 0 });
   }
+
+  // Transactions
   for (const t of txJ) {
     const slot = map.get(t.devise);
     if (!slot) continue;
-    if (t.type === 'ACHAT') slot.achats += t.montant;
-    if (t.type === 'VENTE') slot.ventes += t.montant;
+    if (t.type === 'ACHAT')   slot.achats   += t.montant;
+    if (t.type === 'VENTE')   slot.ventes   += t.montant;
     if (t.type === 'RETRAIT') slot.retraits += t.montant;
+    if (t.type === 'DEPOT')   slot.depots   += t.montant;
   }
+
+  // Mouvements caisse (ALIMENTATION / PRELEVEMENT)
+  for (const m of mouvements) {
+    const slot = map.get(m.devise);
+    if (!slot) continue;
+    if (m.type === 'ALIMENTATION') slot.alimentations += Math.abs(m.montant);
+    if (m.type === 'PRELEVEMENT')  slot.prelevements  += Math.abs(m.montant);
+  }
+
   return DEVISES_CAISSE_V8.map((devise) => {
     const m = map.get(devise)!;
+    const stockSoir =
+      m.achats + m.depots + m.alimentations - m.ventes - m.retraits - m.prelevements;
     return {
       devise,
       achatsJour: m.achats,
       ventesJour: m.ventes,
       retraitsJour: m.retraits,
+      alimentationsJour: m.alimentations,
+      stockSoir: Math.max(0, stockSoir),
     };
   });
 }
