@@ -132,7 +132,6 @@ export const getCurrentUser = (): User | null => {
   const data = localStorage.getItem('currentUser');
   if (!data) return null;
   const u = JSON.parse(data) as User;
-  // Normalize legacy role 'EMPLOYEE' → 'CAISSIER'
   if ((u.role as string) === 'EMPLOYEE') u.role = 'CAISSIER';
   return u;
 };
@@ -156,7 +155,6 @@ export const getUsers = (): User[] => {
   const data = localStorage.getItem(USERS_KEY);
   if (!data) return [];
   const users = JSON.parse(data) as User[];
-  // Normalize legacy roles
   return users.map((u) => ({
     ...u,
     role: (u.role as string) === 'EMPLOYEE' ? 'CAISSIER' : u.role,
@@ -181,7 +179,7 @@ export const addUser = (user: Omit<User, 'id' | 'dateCreation'>): User => {
     dateCreation: new Date(),
   };
   users.push(newUser);
-  saveUsers(users);
+  saveUsers(newUser ? [...users] : users);
   logAudit(AUDIT_ACTIONS.TX_CREATE, { action: 'USER_CREATE', id: newUser.id, nom: newUser.nom, role: newUser.role });
   return newUser;
 };
@@ -202,18 +200,18 @@ export const calculateStock = (
 ): { totalAchete: number; totalVendu: number; stockActuel: number } => {
   const relevant = getTransactions().filter((t) => t.devise === devise);
   const totalAchete = relevant
-    .filter((t) => t.type === 'ACHAT')
+    .filter((t) => t.type === 'ACHAT' || t.type === 'DEPOT')
     .reduce((sum, t) => sum + t.montant, 0);
   const totalVendu = relevant
-    .filter((t) => t.type === 'VENTE')
+    .filter((t) => t.type === 'VENTE' || t.type === 'RETRAIT')
     .reduce((sum, t) => sum + t.montant, 0);
   return { totalAchete, totalVendu, stockActuel: totalAchete - totalVendu };
 };
 
 export const calculateCaisse = (): number =>
   filterTransactionsComptables(getTransactions()).reduce((caisse, t) => {
-    if (t.type === 'DEPOT') return caisse + t.montantMAD;
-    if (t.type === 'RETRAIT') return caisse - t.montantMAD;
+    if (t.type === 'DEPOT') return caisse + (t.devise === 'MAD' ? t.montant : t.montantMAD);
+    if (t.type === 'RETRAIT') return caisse - (t.devise === 'MAD' ? t.montant : t.montantMAD);
     if (t.type === 'CHARGES') return caisse - t.montantMAD;
     return caisse;
   }, 0);
@@ -232,7 +230,6 @@ export const getClosures = (): DailyClosure[] => {
   }
 };
 
-/** Dernière clôture validée (pour affichage solde hérité — chaîne J-1 → J). */
 export const getLastClosure = (): DailyClosure | null => {
   const validated = getClosures()
     .filter((c) => c.status === 'VALIDATED')
@@ -246,7 +243,6 @@ export const getLastClosure = (): DailyClosure | null => {
   }
 };
 
-/** Dernière clôture validée strictement avant `dateStr` (YYYY-MM-DD). */
 export function getLastValidatedClosureBefore(dateStr: string): DailyClosure | null {
   const list = getClosures()
     .filter((c) => c.status === 'VALIDATED' && c.date < dateStr)
@@ -312,9 +308,7 @@ export const calculateDailyClosure = (date: string): DailyClosure => {
     }
   }
 
-  /** Colonne N Excel : ventes − achats (MAD). */
   const dailyBenefit = totalSells - totalBuys;
-  /** Colonne O : G + K − L − M + N */
   const theoreticalBalance =
     initialBalanceMAD + totalDeposits - totalWithdrawals - totalCharges + dailyBenefit;
 
@@ -326,22 +320,16 @@ export const calculateDailyClosure = (date: string): DailyClosure => {
     year: d.year(),
     employee: getCurrentUser()?.nom ?? 'Inconnu',
     manager: undefined,
-
     initialBalance,
     initialBalanceMAD,
-
     transactions: { totalBuys, totalSells, totalDeposits, totalWithdrawals, totalCharges },
-
     finalBalance: {},
     finalBalanceMAD: theoreticalBalance,
-
     dailyBenefit,
     theoreticalBalance,
     realBalance: theoreticalBalance,
-
     variance: 0,
     isBalanced: true,
-
     status: 'DRAFT',
     notes: '',
   };
@@ -523,13 +511,11 @@ export const getMouvements = (): MouvementCaisse[] => {
   }
 };
 
-/** Calcule le solde courant d'une devise en sommant tous ses mouvements. */
 export const getSoldeDevise = (devise: string, list?: MouvementCaisse[]): number =>
   (list ?? getMouvements())
     .filter((m) => m.devise === devise)
     .reduce((s, m) => s + m.montant, 0);
 
-/** Append-only — jamais de mise à jour ni suppression. */
 function appendMouvement(
   mv: Omit<MouvementCaisse, 'id' | 'soldeAvant' | 'soldeApres' | 'locked'>
 ): MouvementCaisse {
@@ -549,7 +535,12 @@ function appendMouvement(
   return newMv;
 }
 
-/** Crée les mouvements correspondant à une transaction. */
+/**
+ * FIX BUG 1 — DEPOT/RETRAIT :
+ * - Si devise = MAD → mouvement MAD avec tx.montant (pas montantMAD calculé avec taux)
+ * - Si devise étrangère → mouvement en devise avec tx.montant (signe + pour dépôt, - pour retrait)
+ *   + mouvement MAD secondaire SEULEMENT si taux != 1 (info comptable, pas opérationnel)
+ */
 function appendMouvementsTransaction(tx: Transaction): void {
   const ts = new Date().toISOString();
   const caissier = getCurrentUser()?.nom ?? 'Système';
@@ -562,6 +553,7 @@ function appendMouvementsTransaction(tx: Transaction): void {
       appendMouvement({ timestamp: ts, type: 'ACHAT', devise: tx.devise, montant: tx.montant, operationRef: ref, operationNumero, caissier, note });
       appendMouvement({ timestamp: ts, type: 'ACHAT', devise: 'MAD', montant: -tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
       break;
+
     case 'VENTE': {
       appendMouvement({ timestamp: ts, type: 'VENTE', devise: tx.devise, montant: -tx.montant, operationRef: ref, operationNumero, caissier, note });
       const madRecu = tx.montantAPayer ?? tx.montantMAD;
@@ -570,15 +562,39 @@ function appendMouvementsTransaction(tx: Transaction): void {
       }
       break;
     }
+
     case 'DEPOT':
-      appendMouvement({ timestamp: ts, type: 'DEPOT', devise: 'MAD', montant: tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
+      if (tx.devise === 'MAD') {
+        // Dépôt MAD : mouvement MAD avec le montant saisi directement
+        appendMouvement({ timestamp: ts, type: 'DEPOT', devise: 'MAD', montant: tx.montant, operationRef: ref, operationNumero, caissier, note });
+      } else {
+        // Dépôt en devise étrangère : mouvement en devise (stock augmente)
+        appendMouvement({ timestamp: ts, type: 'DEPOT', devise: tx.devise, montant: tx.montant, operationRef: ref, operationNumero, caissier, note });
+        // Info MAD secondaire seulement si taux différent de 1
+        if (tx.taux !== 1 && tx.montantMAD > 0) {
+          appendMouvement({ timestamp: ts, type: 'DEPOT', devise: 'MAD', montant: tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
+        }
+      }
       break;
+
     case 'RETRAIT':
-      appendMouvement({ timestamp: ts, type: 'RETRAIT', devise: 'MAD', montant: -tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
+      if (tx.devise === 'MAD') {
+        // Retrait MAD : soustrait le montant saisi directement
+        appendMouvement({ timestamp: ts, type: 'RETRAIT', devise: 'MAD', montant: -tx.montant, operationRef: ref, operationNumero, caissier, note });
+      } else {
+        // Retrait en devise étrangère : mouvement en devise (stock diminue)
+        appendMouvement({ timestamp: ts, type: 'RETRAIT', devise: tx.devise, montant: -tx.montant, operationRef: ref, operationNumero, caissier, note });
+        // Info MAD secondaire seulement si taux différent de 1
+        if (tx.taux !== 1 && tx.montantMAD > 0) {
+          appendMouvement({ timestamp: ts, type: 'RETRAIT', devise: 'MAD', montant: -tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
+        }
+      }
       break;
+
     case 'CHARGES':
       appendMouvement({ timestamp: ts, type: 'CHARGES', devise: 'MAD', montant: -tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
       break;
+
     case 'ANNULATION': {
       if (!tx.annulationRef) break;
       const origTx = getTransactions().find((t) => t.id === tx.annulationRef);
@@ -595,10 +611,18 @@ function appendMouvementsTransaction(tx: Transaction): void {
           break;
         }
         case 'DEPOT':
-          appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: -tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
+          if (origTx.devise === 'MAD') {
+            appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: -origTx.montant, operationRef: ref, operationNumero, caissier, note });
+          } else {
+            appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: origTx.devise, montant: -origTx.montant, operationRef: ref, operationNumero, caissier, note });
+          }
           break;
         case 'RETRAIT':
-          appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
+          if (origTx.devise === 'MAD') {
+            appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: origTx.montant, operationRef: ref, operationNumero, caissier, note });
+          } else {
+            appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: origTx.devise, montant: origTx.montant, operationRef: ref, operationNumero, caissier, note });
+          }
           break;
         case 'CHARGES':
           appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
@@ -609,7 +633,6 @@ function appendMouvementsTransaction(tx: Transaction): void {
   }
 }
 
-/** Annule une transaction (crée une nouvelle opération inverse — l'originale reste intacte). */
 export function annulerTransaction(txId: string, raison: string): Transaction {
   const allTx = getTransactions();
   const origTx = allTx.find((t) => t.id === txId);
@@ -639,7 +662,6 @@ export function annulerTransaction(txId: string, raison: string): Transaction {
   });
 }
 
-/** Crée un mouvement RELIQUAT lors d'un versement. */
 function appendMouvementReliquat(reliquat: Reliquat, versement: Versement): void {
   appendMouvement({
     timestamp: new Date().toISOString(),
@@ -652,7 +674,6 @@ function appendMouvementReliquat(reliquat: Reliquat, versement: Versement): void
   });
 }
 
-/** ALIMENTATION manuelle (responsable approvisionne la caisse). */
 export const appendAlimentation = (params: {
   montant: number;
   devise?: string;
@@ -670,7 +691,6 @@ export const appendAlimentation = (params: {
     contexte: params.contexte,
   });
 
-/** PRÉLÈVEMENT manuel (responsable retire de la caisse). */
 export const appendPrelevement = (params: {
   montant: number;
   devise?: string;
@@ -690,7 +710,6 @@ export const appendPrelevement = (params: {
 
 // === RAPPORTS MENSUELS ===
 
-/** Bénéfice du mois = ventes − achats − charges (opérations valides uniquement, hors annulations). */
 export const calculateMonthlyReport = (month: number, year = new Date().getFullYear()) => {
   const moisKey = `${year}-${String(month).padStart(2, '0')}`;
   const r = calculRapportMensuel(getTransactions(), moisKey);
