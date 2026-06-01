@@ -7,10 +7,6 @@ export function calculMontantMAD(montant: number, taux: number): number {
   return Math.round(montant * taux * 100) / 100;
 }
 
-/**
- * Valeur colonne « À payer » (MAD) : montant saisi (crédit / acompte) si présent,
- * sinon équivalent MAD de la ligne — comme sur le suivi quand la cellule n’est pas réservée au seul reste dû.
- */
 export function montantAPayerAffiche(tx: Pick<Transaction, 'montantAPayer' | 'montantMAD'>): number {
   if (tx.montantAPayer != null && Number.isFinite(tx.montantAPayer)) return tx.montantAPayer;
   return tx.montantMAD;
@@ -20,7 +16,6 @@ export function montantAPayerSaisiExplicite(tx: Pick<Transaction, 'montantAPayer
   return tx.montantAPayer != null && Number.isFinite(tx.montantAPayer);
 }
 
-/** VENTE : reste dû = montant vente (MAD) − montant payé */
 export function resteNonPayeVente(tx: Pick<Transaction, 'type' | 'montantMAD' | 'montantAPayer'>): number {
   if (tx.type !== 'VENTE') return 0;
   const mad = tx.montantMAD;
@@ -34,36 +29,43 @@ export function statutVenteFromPaye(montantMAD: number, montantPaye: number): 'P
   return reste <= 0.001 ? 'PAYÉ' : 'NON-PAYÉ';
 }
 
+/**
+ * FIX BUG 2 — Stock disponible par devise :
+ * = départ du jour + ACHAT + DEPOT (en devise) − VENTE − RETRAIT (en devise)
+ * Les DEPOT/RETRAIT en devise étrangère sont maintenant comptés dans le stock.
+ */
 export function calculStock(transactions: Transaction[], rates: ExchangeRate[]): Stock[] {
   const actives = filterTransactionsComptables(transactions);
   const rateMap = new Map<string, number>(
     rates.map((r) => [r.devise, r.tauxJour])
   );
-
-  const stockMap = new Map<string, { achete: number; vendu: number }>();
+  const stockMap = new Map<string, { achete: number; vendu: number; depots: number; retraits: number }>();
 
   for (const tx of actives) {
     if (tx.devise === 'MAD') continue;
-    const entry = stockMap.get(tx.devise) ?? { achete: 0, vendu: 0 };
-    if (tx.type === 'ACHAT') entry.achete += tx.montant;
-    if (tx.type === 'VENTE') entry.vendu += tx.montant;
+    const entry = stockMap.get(tx.devise) ?? { achete: 0, vendu: 0, depots: 0, retraits: 0 };
+    if (tx.type === 'ACHAT')   entry.achete   += tx.montant;
+    if (tx.type === 'VENTE')   entry.vendu    += tx.montant;
+    // FIX: DEPOT et RETRAIT en devise étrangère alimentent/retirent du stock
+    if (tx.type === 'DEPOT')   entry.depots   += tx.montant;
+    if (tx.type === 'RETRAIT') entry.retraits += tx.montant;
     stockMap.set(tx.devise, entry);
   }
 
-  return Array.from(stockMap.entries()).map(([devise, { achete, vendu }]) => {
+  return Array.from(stockMap.entries()).map(([devise, { achete, vendu, depots, retraits }]) => {
     const taux = rateMap.get(devise) ?? TAUX_PAR_DEFAUT[devise] ?? 1;
-    const stockActuel = achete - vendu;
+    // Stock = achats + dépôts en devise - ventes - retraits en devise
+    const stockActuel = achete + depots - vendu - retraits;
     return {
       devise,
-      totalAchete: achete,
-      totalVendu: vendu,
+      totalAchete: achete + depots,
+      totalVendu: vendu + retraits,
       stockActuel,
       valeurMAD: calculMontantMAD(stockActuel, taux),
     };
   });
 }
 
-/** Agrège achats / ventes / charges en MAD sur une liste déjà filtrée (ex. même périmètre qu’un TCD Excel). */
 export function calculRapportPourListe(
   transactions: Transaction[],
   moisLabel: string
@@ -72,19 +74,15 @@ export function calculRapportPourListe(
   const totalAchats = actives
     .filter((tx) => tx.type === 'ACHAT')
     .reduce((s, tx) => s + tx.montantMAD, 0);
-
   const totalVentes = actives
     .filter((tx) => tx.type === 'VENTE')
     .reduce((s, tx) => s + tx.montantMAD, 0);
-
   const chargesAgence = actives
     .filter((tx) => tx.type === 'CHARGES')
     .reduce((s, tx) => s + tx.montantMAD, 0);
-
   const beneficeBrut = totalVentes - totalAchats;
   const beneficeNet = beneficeBrut - chargesAgence;
   const margePercent = totalVentes > 0 ? (beneficeNet / totalVentes) * 100 : 0;
-
   return {
     mois: moisLabel,
     caisseDepart: 0,
