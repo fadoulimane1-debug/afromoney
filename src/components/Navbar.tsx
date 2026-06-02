@@ -85,7 +85,6 @@ export const NAV_STRUCTURE: NavEntry[] = [
         emoji: '🌙',
         description: 'Ferme la caisse du jour',
         accentClass: 'text-orange-400',
-        minRole: 'RESPONSABLE',
       },
       {
         to: '/reconciliation',
@@ -102,7 +101,6 @@ export const NAV_STRUCTURE: NavEntry[] = [
         emoji: '📋',
         description: 'Mouvements immuables — audit Office des Changes',
         accentClass: 'text-purple-400',
-        minRole: 'RESPONSABLE',
       },
       {
         to: '/mouvements-coffre',
