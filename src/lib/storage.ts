@@ -199,12 +199,24 @@ export const calculateStock = (
   devise: string
 ): { totalAchete: number; totalVendu: number; stockActuel: number } => {
   const relevant = getTransactions().filter((t) => t.devise === devise);
-  const totalAchete = relevant
-    .filter((t) => t.type === 'ACHAT' || t.type === 'DEPOT')
-    .reduce((sum, t) => sum + t.montant, 0);
-  const totalVendu = relevant
-    .filter((t) => t.type === 'VENTE' || t.type === 'RETRAIT')
-    .reduce((sum, t) => sum + t.montant, 0);
+  const mouvements = getMouvements().filter((m) => m.devise === devise);
+
+  const totalAchete =
+    relevant
+      .filter((t) => t.type === 'ACHAT' || t.type === 'DEPOT')
+      .reduce((sum, t) => sum + t.montant, 0) +
+    mouvements
+      .filter((m) => m.type === 'ALIMENTATION')
+      .reduce((sum, m) => sum + Math.abs(m.montant), 0);
+
+  const totalVendu =
+    relevant
+      .filter((t) => t.type === 'VENTE' || t.type === 'RETRAIT')
+      .reduce((sum, t) => sum + t.montant, 0) +
+    mouvements
+      .filter((m) => m.type === 'PRELEVEMENT')
+      .reduce((sum, m) => sum + Math.abs(m.montant), 0);
+
   return { totalAchete, totalVendu, stockActuel: totalAchete - totalVendu };
 };
 
