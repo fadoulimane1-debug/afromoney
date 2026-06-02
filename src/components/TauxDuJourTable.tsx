@@ -119,6 +119,7 @@ export function TauxDuJourTable({
 
   function handleSave() {
     const now = new Date().toISOString();
+
     const all = getExchangeRates();
     const errors: string[] = [];
     const dateUpdate = new Date();
@@ -269,12 +270,11 @@ export function TauxDuJourTable({
         </div>
 
         {/* Édition manuelle */}
-        <div className="h-fit w-full self-start overflow-hidden rounded-lg border border-emerald-300 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-emerald-200 bg-emerald-50 px-3 py-1.5">
+        <div className="h-fit w-full self-start overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-3 py-1.5">
             <div className="flex items-center gap-1.5">
-              <Pencil size={13} className="text-emerald-600" />
-              <span className="text-[12px] font-semibold text-emerald-700">Édition manuelle</span>
-              <span className="text-[11px] text-emerald-600 font-medium">— Remplissez tout puis cliquez Sauvegarder</span>
+              <Pencil size={13} className="text-zinc-400" />
+              <span className="text-[12px] font-semibold text-zinc-600">Édition manuelle</span>
             </div>
             {savedFullLabel && (
               <span className="text-[10px] text-zinc-400">Sauvegardé : {savedFullLabel}</span>
@@ -320,22 +320,22 @@ export function TauxDuJourTable({
             </tbody>
           </table>
 
-          <div className="border-t border-emerald-200 bg-emerald-50 px-3 py-3">
-            <p className="mb-2 text-center text-[12px] font-semibold text-emerald-700">
-              ⬇️ Remplissez toutes les devises ci-dessus, puis cliquez une seule fois :
-            </p>
+          <div className="space-y-2 border-t border-zinc-200 px-3 py-2">
+            {lastSaved && (
+              <p className="text-[11px] text-zinc-500">
+                Dernière sauvegarde :{' '}
+                <span className="font-medium text-zinc-700">{savedFullLabel}</span>
+                {' '}— vous pouvez modifier et sauvegarder à nouveau.
+              </p>
+            )}
+
             <button
               type="button"
               onClick={handleSave}
-              className="w-full rounded-lg bg-emerald-600 py-2.5 text-[14px] font-bold text-white shadow transition hover:bg-emerald-700 active:bg-emerald-800"
+              className="w-full rounded bg-emerald-600 py-1.5 text-[13px] font-bold text-white transition hover:bg-emerald-700 active:bg-emerald-800"
             >
-              ✅ Sauvegarder tous les taux
+              Sauvegarder les taux
             </button>
-            {savedFullLabel && (
-              <p className="mt-1.5 text-center text-[10px] text-emerald-600">
-                Dernière sauvegarde : {savedFullLabel}
-              </p>
-            )}
           </div>
         </div>
       </div>
