@@ -305,14 +305,42 @@ export function CaisseJour() {
                   <span className="font-bold tabular-nums text-amber-800">{fmt(kpi.totalVentesMad)}</span>
                 </div>
                 <div className="border-t border-zinc-100 pt-1" />
-                <div className="flex justify-between gap-2 px-2 py-1.5">
-                  <span className="text-xs text-zinc-600">Total dépôts</span>
-                  <span className="font-semibold tabular-nums text-sky-700">{fmt(kpi.totalDepotsMad)}</span>
-                </div>
-                <div className="flex justify-between gap-2 px-2 py-1.5">
-                  <span className="text-xs text-zinc-600">Total retraits</span>
-                  <span className="font-semibold tabular-nums text-orange-600">{fmt(kpi.totalRetraitsMad)}</span>
-                </div>
+              <div className="px-2 py-1.5">
+  <span className="text-xs text-zinc-600">Total dépôts</span>
+  {txJour.filter((t) => t.type === 'DEPOT').length === 0 ? (
+    <div className="text-right font-semibold tabular-nums text-sky-700">0,00</div>
+  ) : (
+    Object.entries(
+      txJour.filter((t) => t.type === 'DEPOT').reduce((acc, t) => {
+        acc[t.devise] = (acc[t.devise] ?? 0) + t.montant;
+        return acc;
+      }, {} as Record<string, number>)
+    ).map(([devise, total]) => (
+      <div key={devise} className="flex justify-between gap-2">
+        <span className="text-xs text-zinc-400">{devise}</span>
+        <span className="font-semibold tabular-nums text-sky-700">{fmt(total)}</span>
+      </div>
+    ))
+  )}
+</div>
+<div className="px-2 py-1.5">
+  <span className="text-xs text-zinc-600">Total retraits</span>
+  {txJour.filter((t) => t.type === 'RETRAIT').length === 0 ? (
+    <div className="text-right font-semibold tabular-nums text-orange-600">0,00</div>
+  ) : (
+    Object.entries(
+      txJour.filter((t) => t.type === 'RETRAIT').reduce((acc, t) => {
+        acc[t.devise] = (acc[t.devise] ?? 0) + t.montant;
+        return acc;
+      }, {} as Record<string, number>)
+    ).map(([devise, total]) => (
+      <div key={devise} className="flex justify-between gap-2">
+        <span className="text-xs text-zinc-400">{devise}</span>
+        <span className="font-semibold tabular-nums text-orange-600">{fmt(total)}</span>
+      </div>
+    ))
+  )}
+</div>
                 <div className="flex justify-between gap-2 px-2 py-1.5">
                   <span className="text-xs text-zinc-600">Total charges</span>
                   <span className="font-semibold tabular-nums text-zinc-700">{fmt(chargesJour)}</span>
