@@ -1,5 +1,4 @@
 import { Link } from 'react-router-dom';
-import { AccueilContactSection } from '@/components/AccueilContactSection';
 import { PageHero } from '@/components/PageHero';
 import { Logo } from '@/components/Logo';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,9 +14,7 @@ import {
 } from 'lucide-react';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
-
 dayjs.locale('fr');
-
 const LIENS_RAPIDES = [
   {
     to: '/dashboard',
@@ -57,20 +54,18 @@ const LIENS_RAPIDES = [
   },
   {
     to: '/audit',
-    title: 'Journal d\'audit',
+    title: "Journal d'audit",
     desc: 'Historique des actions sensibles et export CSV.',
     icon: Shield,
   },
 ] as const;
-
 export function Accueil() {
   const now = dayjs();
-
   return (
     <div>
       <PageHero
         title="Accueil"
-        subtitle={`${now.format('dddd D MMMM YYYY')} — point d’entrée AFROMONEY · accédez à la synthèse ou aux modules ci-dessous.`}
+        subtitle={`${now.format('dddd D MMMM YYYY')} — point d'entrée AFROMONEY · accédez à la synthèse ou aux modules ci-dessous.`}
         actions={
           <Link
             to="/dashboard"
@@ -80,7 +75,6 @@ export function Accueil() {
           </Link>
         }
       />
-
       <div className="page-content">
         <div className="mx-auto max-w-[1100px]">
           <div className="mb-6 flex justify-center">
@@ -113,8 +107,6 @@ export function Accueil() {
           </div>
         </div>
       </div>
-
-      <AccueilContactSection />
     </div>
   );
 }
