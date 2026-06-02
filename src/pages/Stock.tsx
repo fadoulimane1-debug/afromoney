@@ -11,6 +11,7 @@ import { filterTransactionsComptables } from '@/lib/transactionFilters';
 import { calculMontantMAD } from '@/lib/calculations';
 import { fmt, fmtRate, fmtPct } from '@/lib/formatNumbers';
 import { getMouvements } from '@/lib/storage';
+import { getAllSnapshots } from '@/lib/stageCaisse/storage';
 
 dayjs.locale('fr');
 
@@ -113,9 +114,21 @@ export function Stock() {
     return map;
   }, [txActives]);
 
-  /* Stock cumulé (opérations valides) par devise */
+  /* Stock cumulé (départ snapshot + opérations valides) par devise */
 const stockByDevise = useMemo(() => {
     const map = new Map<string, { achete: number; vendu: number }>();
+
+    // ── 1. Stock initial : snapshot DEPART de la journée courante ──
+    const today = dayjs().format('YYYY-MM-DD');
+    for (const row of getAllSnapshots()) {
+      if (row.type_solde !== 'DEPART' || row.date_comptable !== today) continue;
+      if (row.devise_code === 'MAD') continue;
+      const e = map.get(row.devise_code) ?? { achete: 0, vendu: 0 };
+      e.achete += row.montant;
+      map.set(row.devise_code, e);
+    }
+
+    // ── 2. Transactions du jour ──
     for (const tx of txActives) {
       if (tx.devise === 'MAD') continue;
       const e = map.get(tx.devise) ?? { achete: 0, vendu: 0 };
@@ -123,7 +136,8 @@ const stockByDevise = useMemo(() => {
       if (tx.type === 'VENTE' || tx.type === 'RETRAIT') e.vendu += tx.montant;
       map.set(tx.devise, e);
     }
-    // Alimentations et prélèvements depuis mouvements caisse
+
+    // ── 3. Alimentations et prélèvements depuis mouvements caisse ──
     const mouvements = getMouvements();
     for (const mv of mouvements) {
       if (mv.devise === 'MAD') continue;
