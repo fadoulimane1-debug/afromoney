@@ -3,13 +3,8 @@ import { CheckCircle, Circle } from 'lucide-react';
 import dayjs from 'dayjs';
 
 const ITEMS = [
-  { id: 'depart', label: 'Snapshot d\'ouverture (DÉPART) enregistré' },
-  { id: 'ops', label: 'Toutes les opérations du jour saisies' },
-  { id: 'credits', label: 'Crédits et impayés vérifiés' },
   { id: 'count', label: 'Comptage physique des devises effectué' },
   { id: 'mad', label: 'Solde MAD compté et saisi en clôture' },
-  { id: 'recon', label: 'Réconciliation devises validée' },
-  { id: 'sign', label: 'Signature responsable apposée' },
 ] as const;
 
 type ItemId = (typeof ITEMS)[number]['id'];
