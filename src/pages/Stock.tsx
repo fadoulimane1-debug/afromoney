@@ -10,6 +10,7 @@ import { DEVISES, TAUX_PAR_DEFAUT } from '@/lib/constants';
 import { filterTransactionsComptables } from '@/lib/transactionFilters';
 import { calculMontantMAD } from '@/lib/calculations';
 import { fmt, fmtRate, fmtPct } from '@/lib/formatNumbers';
+import { getMouvements } from '@/lib/storage';
 
 dayjs.locale('fr');
 
@@ -113,14 +114,23 @@ export function Stock() {
   }, [txActives]);
 
   /* Stock cumulé (opérations valides) par devise */
-  const stockByDevise = useMemo(() => {
+const stockByDevise = useMemo(() => {
     const map = new Map<string, { achete: number; vendu: number }>();
     for (const tx of txActives) {
       if (tx.devise === 'MAD') continue;
       const e = map.get(tx.devise) ?? { achete: 0, vendu: 0 };
-      if (tx.type === 'ACHAT') e.achete += tx.montant;
-      if (tx.type === 'VENTE') e.vendu += tx.montant;
+      if (tx.type === 'ACHAT' || tx.type === 'DEPOT') e.achete += tx.montant;
+      if (tx.type === 'VENTE' || tx.type === 'RETRAIT') e.vendu += tx.montant;
       map.set(tx.devise, e);
+    }
+    // Alimentations et prélèvements depuis mouvements caisse
+    const mouvements = getMouvements();
+    for (const mv of mouvements) {
+      if (mv.devise === 'MAD') continue;
+      const e = map.get(mv.devise) ?? { achete: 0, vendu: 0 };
+      if (mv.type === 'ALIMENTATION') e.achete += Math.abs(mv.montant);
+      if (mv.type === 'PRELEVEMENT')  e.vendu  += Math.abs(mv.montant);
+      map.set(mv.devise, e);
     }
     return map;
   }, [txActives]);
