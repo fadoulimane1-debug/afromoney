@@ -16,9 +16,9 @@ import {
 } from '@/components/ui/table';
 import { useAppData } from '@/hooks/useAppData';
 import { summarizeCaisseJourV8, recapDeviseJournee } from '@/lib/bilanV8';
-import { getCaisseDepartJour } from '@/lib/caisseDepartLocal';
 import type { Transaction, TransactionType } from '@/types';
 import { fmt, fmtRate } from '@/lib/formatNumbers';
+import { getAllSnapshots } from '@/lib/stageCaisse/storage';
 
 dayjs.locale('fr');
 
@@ -150,15 +150,25 @@ export function CaisseJour() {
   const recap = useMemo(() => recapDeviseJournee(transactions, dayJs), [transactions, dayJs]);
   const kpi = useMemo(() => summarizeCaisseJourV8(transactions, dayJs), [transactions, dayJs]);
 
+  // ── Départ MAD : lit le snapshot DEPART du jour (saisi dans /journal-journee) ──
   const caisseDepart = useMemo(() => {
-    const fromStore = getCaisseDepartJour(day);
-    if (fromStore != null) return fromStore;
-    const first = txJour.map((t) => t.caisseDepart).find((c) => c != null && c > 0);
-    return first ?? 0;
-  }, [day, txJour]);
+    const snapshots = getAllSnapshots();
+    const departMAD = snapshots
+      .filter((s) => s.type_solde === 'DEPART' && s.date_comptable === day && s.devise_code === 'MAD')
+      .reduce((sum, s) => sum + s.montant, 0);
+    return departMAD;
+  }, [day]);
 
   const chargesJour = txJour.filter((t) => t.type === 'CHARGES').reduce((s, t) => s + t.montantMAD, 0);
-  const caisseFinMAD = caisseDepart + kpi.totalDepotsMad - kpi.totalRetraitsMad - chargesJour;
+
+  // Caisse fin = Départ MAD + (Ventes MAD encaissées) - (Achats MAD décaissés) + Dépôts MAD - Retraits MAD - Charges
+  const caisseFinMAD = useMemo(() => {
+    const ventesMad  = txJour.filter((t) => t.type === 'VENTE').reduce((s, t) => s + t.montantMAD, 0);
+    const achatsMad  = txJour.filter((t) => t.type === 'ACHAT').reduce((s, t) => s + t.montantMAD, 0);
+    const depotsMad  = txJour.filter((t) => t.type === 'DEPOT' && t.devise === 'MAD').reduce((s, t) => s + t.montant, 0);
+    const retraitsMad = txJour.filter((t) => t.type === 'RETRAIT' && t.devise === 'MAD').reduce((s, t) => s + t.montant, 0);
+    return caisseDepart + ventesMad - achatsMad + depotsMad - retraitsMad - chargesJour;
+  }, [caisseDepart, txJour, chargesJour]);
   const creditsDuJour = txJour.filter((t) => t.statut === 'CRÉDIT');
 
   function rowsForType(type: TransactionType): Transaction[] {
