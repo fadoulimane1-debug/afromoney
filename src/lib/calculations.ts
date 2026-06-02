@@ -1,6 +1,7 @@
 import type { Transaction, Stock, MonthlyReport, ExchangeRate } from '@/types';
 import { TAUX_PAR_DEFAUT } from './constants';
 import { filterTransactionsComptables } from '@/lib/transactionFilters';
+import { getMouvements } from '@/lib/storage';
 import dayjs from 'dayjs';
 
 export function calculMontantMAD(montant: number, taux: number): number {
@@ -19,8 +20,7 @@ export function montantAPayerSaisiExplicite(tx: Pick<Transaction, 'montantAPayer
 export function resteNonPayeVente(tx: Pick<Transaction, 'type' | 'montantMAD' | 'montantAPayer'>): number {
   if (tx.type !== 'VENTE') return 0;
   const mad = tx.montantMAD;
-  const paye =
-    tx.montantAPayer != null && Number.isFinite(tx.montantAPayer) ? tx.montantAPayer : 0;
+  const paye = tx.montantAPayer != null && Number.isFinite(tx.montantAPayer) ? tx.montantAPayer : 0;
   return Math.max(0, Math.round((mad - paye) * 100) / 100);
 }
 
@@ -30,56 +30,57 @@ export function statutVenteFromPaye(montantMAD: number, montantPaye: number): 'P
 }
 
 /**
- * FIX BUG 2 — Stock disponible par devise :
- * = départ du jour + ACHAT + DEPOT (en devise) − VENTE − RETRAIT (en devise)
- * Les DEPOT/RETRAIT en devise étrangère sont maintenant comptés dans le stock.
+ * FIX — Stock disponible par devise:
+ * ACHAT + DEPOT + ALIMENTATION (mouvements caisse) − VENTE − RETRAIT − PRELEVEMENT
  */
 export function calculStock(transactions: Transaction[], rates: ExchangeRate[]): Stock[] {
   const actives = filterTransactionsComptables(transactions);
-  const rateMap = new Map<string, number>(
-    rates.map((r) => [r.devise, r.tauxJour])
-  );
-  const stockMap = new Map<string, { achete: number; vendu: number; depots: number; retraits: number }>();
+  const mouvements = getMouvements();
+  const rateMap = new Map<string, number>(rates.map((r) => [r.devise, r.tauxJour]));
 
+  const stockMap = new Map<string, {
+    achete: number; vendu: number; depots: number;
+    retraits: number; alimentations: number; prelevements: number;
+  }>();
+
+  // Transactions
   for (const tx of actives) {
     if (tx.devise === 'MAD') continue;
-    const entry = stockMap.get(tx.devise) ?? { achete: 0, vendu: 0, depots: 0, retraits: 0 };
+    const entry = stockMap.get(tx.devise) ?? { achete: 0, vendu: 0, depots: 0, retraits: 0, alimentations: 0, prelevements: 0 };
     if (tx.type === 'ACHAT')   entry.achete   += tx.montant;
     if (tx.type === 'VENTE')   entry.vendu    += tx.montant;
-    // FIX: DEPOT et RETRAIT en devise étrangère alimentent/retirent du stock
     if (tx.type === 'DEPOT')   entry.depots   += tx.montant;
     if (tx.type === 'RETRAIT') entry.retraits += tx.montant;
     stockMap.set(tx.devise, entry);
   }
 
-  return Array.from(stockMap.entries()).map(([devise, { achete, vendu, depots, retraits }]) => {
+  // Mouvements caisse (ALIMENTATION / PRELEVEMENT en devise étrangère)
+  for (const mv of mouvements) {
+    if (mv.devise === 'MAD') continue;
+    const entry = stockMap.get(mv.devise) ?? { achete: 0, vendu: 0, depots: 0, retraits: 0, alimentations: 0, prelevements: 0 };
+    if (mv.type === 'ALIMENTATION') entry.alimentations += Math.abs(mv.montant);
+    if (mv.type === 'PRELEVEMENT')  entry.prelevements  += Math.abs(mv.montant);
+    stockMap.set(mv.devise, entry);
+  }
+
+  return Array.from(stockMap.entries()).map(([devise, e]) => {
     const taux = rateMap.get(devise) ?? TAUX_PAR_DEFAUT[devise] ?? 1;
-    // Stock = achats + dépôts en devise - ventes - retraits en devise
-    const stockActuel = achete + depots - vendu - retraits;
+    const stockActuel = e.achete + e.depots + e.alimentations - e.vendu - e.retraits - e.prelevements;
     return {
       devise,
-      totalAchete: achete + depots,
-      totalVendu: vendu + retraits,
+      totalAchete: e.achete + e.depots + e.alimentations,
+      totalVendu: e.vendu + e.retraits + e.prelevements,
       stockActuel,
       valeurMAD: calculMontantMAD(stockActuel, taux),
     };
   });
 }
 
-export function calculRapportPourListe(
-  transactions: Transaction[],
-  moisLabel: string
-): MonthlyReport {
+export function calculRapportPourListe(transactions: Transaction[], moisLabel: string): MonthlyReport {
   const actives = filterTransactionsComptables(transactions);
-  const totalAchats = actives
-    .filter((tx) => tx.type === 'ACHAT')
-    .reduce((s, tx) => s + tx.montantMAD, 0);
-  const totalVentes = actives
-    .filter((tx) => tx.type === 'VENTE')
-    .reduce((s, tx) => s + tx.montantMAD, 0);
-  const chargesAgence = actives
-    .filter((tx) => tx.type === 'CHARGES')
-    .reduce((s, tx) => s + tx.montantMAD, 0);
+  const totalAchats = actives.filter((tx) => tx.type === 'ACHAT').reduce((s, tx) => s + tx.montantMAD, 0);
+  const totalVentes = actives.filter((tx) => tx.type === 'VENTE').reduce((s, tx) => s + tx.montantMAD, 0);
+  const chargesAgence = actives.filter((tx) => tx.type === 'CHARGES').reduce((s, tx) => s + tx.montantMAD, 0);
   const beneficeBrut = totalVentes - totalAchats;
   const beneficeNet = beneficeBrut - chargesAgence;
   const margePercent = totalVentes > 0 ? (beneficeNet / totalVentes) * 100 : 0;
@@ -96,12 +97,7 @@ export function calculRapportPourListe(
   };
 }
 
-export function calculRapportMensuel(
-  transactions: Transaction[],
-  mois: string
-): MonthlyReport {
-  const txMois = transactions.filter(
-    (tx) => dayjs(tx.date).format('YYYY-MM') === mois
-  );
+export function calculRapportMensuel(transactions: Transaction[], mois: string): MonthlyReport {
+  const txMois = transactions.filter((tx) => dayjs(tx.date).format('YYYY-MM') === mois);
   return calculRapportPourListe(txMois, mois);
 }
