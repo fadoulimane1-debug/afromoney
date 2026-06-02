@@ -46,10 +46,6 @@ function setLastSavedDate(isoString: string): void {
   localStorage.setItem(SAVED_DATE_KEY, isoString);
 }
 
-function isSameDay(isoA: string, isoB: string): boolean {
-  return dayjs(isoA).format('YYYY-MM-DD') === dayjs(isoB).format('YYYY-MM-DD');
-}
-
 function loadRows(): RateRow[] {
   let rates = getExchangeRates();
   const snapshot = DEVISES_ORDER.map((devise) => {
@@ -96,7 +92,6 @@ export function TauxDuJourTable({
   const [rows, setRows] = useState<RateRow[]>(() => loadRows());
   const [editState, setEditState] = useState<EditState>(() => rowsToEditState(loadRows()));
   const [lastSaved, setLastSaved] = useState<string | null>(() => getLastSavedDate());
-  const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
     function reload() {
@@ -119,17 +114,11 @@ export function TauxDuJourTable({
   }
 
   function setField(devise: string, field: 'achat' | 'vente', value: string) {
-    setBlocked(false);
     setEditState((prev) => ({ ...prev, [devise]: { ...prev[devise], [field]: value } }));
   }
 
   function handleSave() {
     const now = new Date().toISOString();
-    const saved = getLastSavedDate();
-    if (saved && isSameDay(saved, now)) {
-      setBlocked(true);
-      return;
-    }
 
     const all = getExchangeRates();
     const errors: string[] = [];
@@ -161,7 +150,9 @@ export function TauxDuJourTable({
     saveExchangeRates(updated);
     setLastSavedDate(now);
     setLastSaved(now);
-    setBlocked(false);
+    const r = loadRows();
+    setRows(r);
+    setEditState(rowsToEditState(r));
     notify.success(`Taux sauvegardés à ${dayjs(now).format('HH:mm')}`, 'Édition manuelle');
   }
 
@@ -170,7 +161,6 @@ export function TauxDuJourTable({
   const isCache = meta?.source === 'cache';
   const isApprox = !meta || meta.source === 'default';
   const flatSpread = hasFlatSpread(rows);
-  const alreadySavedToday = lastSaved ? isSameDay(lastSaved, new Date().toISOString()) : false;
 
   const syncLabel = meta
     ? isBKAM
@@ -312,8 +302,7 @@ export function TauxDuJourTable({
                       value={editState[devise]?.achat ?? ''}
                       onChange={(e) => setField(devise, 'achat', e.target.value)}
                       placeholder={fmtRate(rows.find((r) => r.devise === devise)?.tauxAchat ?? 0)}
-                      disabled={alreadySavedToday}
-                      className="w-full rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-center font-mono text-[12px] tabular-nums focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="w-full rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-center font-mono text-[12px] tabular-nums focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-300"
                     />
                   </td>
                   <td className="px-1 py-[3px]">
@@ -323,8 +312,7 @@ export function TauxDuJourTable({
                       value={editState[devise]?.vente ?? ''}
                       onChange={(e) => setField(devise, 'vente', e.target.value)}
                       placeholder={fmtRate(rows.find((r) => r.devise === devise)?.tauxVente ?? 0)}
-                      disabled={alreadySavedToday}
-                      className="w-full rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-center font-mono text-[12px] tabular-nums focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="w-full rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-center font-mono text-[12px] tabular-nums focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-300"
                     />
                   </td>
                 </tr>
@@ -333,40 +321,20 @@ export function TauxDuJourTable({
           </table>
 
           <div className="space-y-2 border-t border-zinc-200 px-3 py-2">
-            {(blocked || alreadySavedToday) && (
-              <div
-                className="rounded border border-blue-200 bg-blue-50 text-zinc-800"
-                style={{ padding: '10px 12px', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', lineHeight: '1.5', fontSize: '12px' }}
-              >
-                <p className="mb-1 text-[12px] font-bold text-blue-800">📋 SAUVEGARDE QUOTIDIENNE COMPLÉTÉE</p>
-                <p className="mb-1.5 text-zinc-600">
-                  Date de sauvegarde :{' '}
-                  <span className="font-semibold text-zinc-800">
-                    {lastSaved ? dayjs(lastSaved).format('DD/MM/YYYY [à] HH:mm') : '—'}
-                  </span>
-                  <br />
-                  Les taux ont été enregistrés avec succès.
-                </p>
-                <div className="mb-1.5 border-t border-blue-200 pt-1.5 text-zinc-600">
-                  <p className="mb-0.5 font-semibold text-zinc-700">Pour toute modification :</p>
-                  <p>• Procédez lors de chaque transaction (achat/vente)</p>
-                  <p>• Ajustements appliqués à la transaction uniquement</p>
-                  <p>• Nouvelle sauvegarde possible à partir de demain</p>
-                </div>
-                <div className="border-t border-blue-200 pt-1.5 text-[11px]">
-                  <span className="font-semibold text-blue-700">Conformité bancaire : </span>
-                  <span className="text-zinc-500">une seule sauvegarde officielle par jour.</span>
-                </div>
-              </div>
+            {lastSaved && (
+              <p className="text-[11px] text-zinc-500">
+                Dernière sauvegarde :{' '}
+                <span className="font-medium text-zinc-700">{savedFullLabel}</span>
+                {' '}— vous pouvez modifier et sauvegarder à nouveau.
+              </p>
             )}
 
             <button
               type="button"
               onClick={handleSave}
-              disabled={alreadySavedToday}
-              className="w-full rounded bg-emerald-600 py-1.5 text-[13px] font-bold text-white transition hover:bg-emerald-700 active:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-400"
+              className="w-full rounded bg-emerald-600 py-1.5 text-[13px] font-bold text-white transition hover:bg-emerald-700 active:bg-emerald-800"
             >
-              {alreadySavedToday ? '🔒 Sauvegarde déjà effectuée' : 'Sauvegarder les taux'}
+              Sauvegarder les taux
             </button>
           </div>
         </div>
