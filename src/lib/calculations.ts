@@ -2,6 +2,7 @@ import type { Transaction, Stock, MonthlyReport, ExchangeRate } from '@/types';
 import { TAUX_PAR_DEFAUT } from './constants';
 import { filterTransactionsComptables } from '@/lib/transactionFilters';
 import { getMouvements } from '@/lib/storage';
+import { getAllSnapshots } from '@/lib/stageCaisse/storage';
 import dayjs from 'dayjs';
 
 export function calculMontantMAD(montant: number, taux: number): number {
@@ -31,7 +32,10 @@ export function statutVenteFromPaye(montantMAD: number, montantPaye: number): 'P
 
 /**
  * FIX — Stock disponible par devise:
- * ACHAT + DEPOT + ALIMENTATION (mouvements caisse) − VENTE − RETRAIT − PRELEVEMENT
+ * DEPART (snapshot) + ACHAT + DEPOT + ALIMENTATION − VENTE − RETRAIT − PRELEVEMENT
+ *
+ * Le snapshot DEPART de la journée en cours (saisi dans /journal-journee) est la base
+ * du stock physique. On y ajoute toutes les transactions et mouvements de la journée.
  */
 export function calculStock(transactions: Transaction[], rates: ExchangeRate[]): Stock[] {
   const actives = filterTransactionsComptables(transactions);
@@ -39,14 +43,25 @@ export function calculStock(transactions: Transaction[], rates: ExchangeRate[]):
   const rateMap = new Map<string, number>(rates.map((r) => [r.devise, r.tauxJour]));
 
   const stockMap = new Map<string, {
-    achete: number; vendu: number; depots: number;
+    depart: number; achete: number; vendu: number; depots: number;
     retraits: number; alimentations: number; prelevements: number;
   }>();
 
-  // Transactions
+  // ── 1. Stock initial : snapshot DEPART de la journée courante ──
+  const today = dayjs().format('YYYY-MM-DD');
+  const allSnapshots = getAllSnapshots();
+  for (const row of allSnapshots) {
+    if (row.type_solde !== 'DEPART' || row.date_comptable !== today) continue;
+    if (row.devise_code === 'MAD') continue;
+    const entry = stockMap.get(row.devise_code) ?? { depart: 0, achete: 0, vendu: 0, depots: 0, retraits: 0, alimentations: 0, prelevements: 0 };
+    entry.depart += row.montant;
+    stockMap.set(row.devise_code, entry);
+  }
+
+  // ── 2. Transactions (ACHAT, VENTE, DEPOT, RETRAIT) ──
   for (const tx of actives) {
     if (tx.devise === 'MAD') continue;
-    const entry = stockMap.get(tx.devise) ?? { achete: 0, vendu: 0, depots: 0, retraits: 0, alimentations: 0, prelevements: 0 };
+    const entry = stockMap.get(tx.devise) ?? { depart: 0, achete: 0, vendu: 0, depots: 0, retraits: 0, alimentations: 0, prelevements: 0 };
     if (tx.type === 'ACHAT')   entry.achete   += tx.montant;
     if (tx.type === 'VENTE')   entry.vendu    += tx.montant;
     if (tx.type === 'DEPOT')   entry.depots   += tx.montant;
@@ -54,10 +69,10 @@ export function calculStock(transactions: Transaction[], rates: ExchangeRate[]):
     stockMap.set(tx.devise, entry);
   }
 
-  // Mouvements caisse (ALIMENTATION / PRELEVEMENT en devise étrangère)
+  // ── 3. Mouvements caisse (ALIMENTATION / PRELEVEMENT en devise étrangère) ──
   for (const mv of mouvements) {
     if (mv.devise === 'MAD') continue;
-    const entry = stockMap.get(mv.devise) ?? { achete: 0, vendu: 0, depots: 0, retraits: 0, alimentations: 0, prelevements: 0 };
+    const entry = stockMap.get(mv.devise) ?? { depart: 0, achete: 0, vendu: 0, depots: 0, retraits: 0, alimentations: 0, prelevements: 0 };
     if (mv.type === 'ALIMENTATION') entry.alimentations += Math.abs(mv.montant);
     if (mv.type === 'PRELEVEMENT')  entry.prelevements  += Math.abs(mv.montant);
     stockMap.set(mv.devise, entry);
@@ -65,11 +80,13 @@ export function calculStock(transactions: Transaction[], rates: ExchangeRate[]):
 
   return Array.from(stockMap.entries()).map(([devise, e]) => {
     const taux = rateMap.get(devise) ?? TAUX_PAR_DEFAUT[devise] ?? 1;
-    const stockActuel = e.achete + e.depots + e.alimentations - e.vendu - e.retraits - e.prelevements;
+    const totalEntrees = e.depart + e.achete + e.depots + e.alimentations;
+    const totalSorties = e.vendu + e.retraits + e.prelevements;
+    const stockActuel = totalEntrees - totalSorties;
     return {
       devise,
-      totalAchete: e.achete + e.depots + e.alimentations,
-      totalVendu: e.vendu + e.retraits + e.prelevements,
+      totalAchete: totalEntrees,
+      totalVendu: totalSorties,
       stockActuel,
       valeurMAD: calculMontantMAD(stockActuel, taux),
     };
