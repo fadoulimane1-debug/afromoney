@@ -43,4 +43,8 @@ export const AUDIT_ACTIONS = {
   RELIQUAT_VERSEMENT: 'RELIQUAT_VERSEMENT_ENREGISTRE',
   RELIQUAT_SOLDE: 'RELIQUAT_SOLDE',
   RELIQUAT_DELETE: 'RELIQUAT_SUPPRIME',
+  /** Modification fiche reliquat (crayon) */
+  RELIQUAT_UPDATE: 'RELIQUAT_MODIFIE',
+  /** Suppression alimentation / prélèvement (admin journal caisse) */
+  MOUVEMENT_DELETE: 'MOUVEMENT_CAISSE_SUPPRIME',
 } as const;
