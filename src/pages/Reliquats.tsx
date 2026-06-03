@@ -42,6 +42,7 @@ import {
 import type { ApiReliquat } from '@/lib/mongoApiClient';
 import { DEVISES, TAUX_PAR_DEFAUT } from '@/lib/constants';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
+import { getNextOperationNumber } from '@/lib/numerotation';
 import type { Reliquat, StatutReliquat } from '@/types';
 import { fmt } from '@/lib/formatNumbers';
 
@@ -182,14 +183,15 @@ interface CreateErrors {
 }
 
 function emptyCreate(): CreateForm {
+  const numero = getNextOperationNumber();
   return {
     client: '',
     categorieClient: 'HABITUEL',
     typeOperation: 'ACHAT',
     devise: 'MAD',
     montantInitial: '',
-    operationRef: '',
-    operationNumero: '',
+    operationRef: numero,
+    operationNumero: numero,
     note: '',
   };
 }
@@ -376,19 +378,22 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Réf. opération *" error={errors.operationRef} hint="ID ou numéro de l'opération initiale">
+            <Field
+              label="Réf. opération *"
+              error={errors.operationRef}
+              hint="Auto-rempli — BCH-AAAA-NNNNNN"
+            >
               <Input
+                readOnly
                 value={form.operationRef}
-                onChange={(e) => set('operationRef', e.target.value)}
-                placeholder="ex: BCH-2026-000001"
-                className={errors.operationRef ? 'border-red-400' : ''}
+                className={`cursor-default border-zinc-200 bg-zinc-50 font-mono text-sm ${errors.operationRef ? 'border-red-400' : ''}`}
               />
             </Field>
-            <Field label="N° bordereau">
+            <Field label="N° bordereau" hint="Même numéro que la réf. opération">
               <Input
+                readOnly
                 value={form.operationNumero}
-                onChange={(e) => set('operationNumero', e.target.value)}
-                placeholder="BCH-2026-XXXXXX"
+                className="cursor-default border-zinc-200 bg-zinc-50 font-mono text-sm"
               />
             </Field>
           </div>
