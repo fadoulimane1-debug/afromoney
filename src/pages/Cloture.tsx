@@ -10,6 +10,7 @@ import {
   calculateDailyClosure,
   getClosureByDate,
   getTransactions,
+  getExchangeRates,
   saveClosure,
   detectVariance,
   validateClosure,
@@ -21,7 +22,6 @@ import { ClosureChecklist } from '@/components/ClosureChecklist';
 import { fmt } from '@/lib/formatNumbers';
 import { getAllSnapshots, upsertSnapshot } from '@/lib/stageCaisse/storage';
 import { calculStock } from '@/lib/calculations';
-import { getExchangeRates } from '@/lib/storage';
 
 dayjs.locale('fr');
 
@@ -34,7 +34,6 @@ const STATUS_CONFIG = {
   ERROR:               { label: 'Écart détecté',     color: 'text-red-500',    icon: AlertTriangle, bg: 'bg-red-50 border-red-200' },
 } as const;
 
-// ─── RowStat : ligne de stat dans le tableau transactions ───────────────────
 function RowStat({
   label, value, colorClass,
 }: { label: string; value: number; colorClass?: string }) {
@@ -48,7 +47,6 @@ function RowStat({
   );
 }
 
-// ─── Page principale ─────────────────────────────────────────────────────────
 export function Cloture() {
   const [closure, setClosure]           = useState<DailyClosure | null>(null);
   const [realBalance, setRealBalance]   = useState(0);
@@ -58,18 +56,15 @@ export function Cloture() {
   const [sigState, setSigState]         = useState<SigState>({ value: null, nom: '', isReady: false });
   const [toast, setToast]               = useState<{ ok: boolean; msg: string } | null>(null);
 
-  // Stock devises réel saisi par le caissier à la clôture
   const DEVISES = ['EUR', 'USD', 'GBP', 'CAD', 'SAR', 'AED', 'CHF', 'KWD'] as const;
-  const [realDevises, setRealDevises] = useState<Record<string, string>>({});
+  const [realDevises, setRealDevises]   = useState<Record<string, string>>({});
 
-  // Stock théorique depuis calculStock
   const stockTheorique = useMemo(() => {
     const txs = getTransactions();
     const rates = getExchangeRates();
     return calculStock(txs, rates);
   }, []);
 
-  // Charger les valeurs réelles déjà saisies (snapshot CLOTURE)
   useEffect(() => {
     const snaps = getAllSnapshots();
     const init: Record<string, string> = {};
@@ -80,6 +75,8 @@ export function Cloture() {
     }
     setRealDevises(init);
   }, []);
+
+  const showToast = (ok: boolean, msg: string) => {
     setToast({ ok, msg });
     setTimeout(() => setToast(null), 4000);
   };
@@ -109,41 +106,20 @@ export function Cloture() {
   const canSign     = isBalanced && sigState.isReady && !isValidated;
 
   const handleValidate = async () => {
-    if (!sigState.nom.trim()) {
-      showToast(false, '❌ Nom du responsable requis');
-      return;
-    }
-    if (!closure) {
-      showToast(false, '❌ Clôture introuvable');
-      return;
-    }
-    if (!isBalanced) {
-      showToast(false, `❌ Écart: ${fmt(variance)} MAD. Justifiez ou corrigez.`);
-      return;
-    }
-    if (!sigState.isReady || !sigState.value) {
-      showToast(false, '❌ Signature requise — confirmez votre signature ci-dessous');
-      return;
-    }
-
+    if (!sigState.nom.trim()) { showToast(false, '❌ Nom du responsable requis'); return; }
+    if (!closure) { showToast(false, '❌ Clôture introuvable'); return; }
+    if (!isBalanced) { showToast(false, `❌ Écart: ${fmt(variance)} MAD. Justifiez ou corrigez.`); return; }
+    if (!sigState.isReady || !sigState.value) { showToast(false, '❌ Signature requise — confirmez votre signature ci-dessous'); return; }
     setIsSubmitting(true);
-
     try {
       let updated = detectVariance({ ...closure }, realBalance);
       updated = { ...updated, notes: notes.trim() };
       saveClosure(updated);
-
       const validated = validateClosure(updated.id, sigState.nom.trim(), sigState.value);
-      if (!validated) {
-        showToast(false, '❌ Erreur lors de la signature');
-        setIsSubmitting(false);
-        return;
-      }
-
+      if (!validated) { showToast(false, '❌ Erreur lors de la signature'); setIsSubmitting(false); return; }
       const final = getClosureByDate(today);
       setClosure(final);
       showToast(true, `✅ Clôture VALIDÉE et signée par ${sigState.nom}`);
-
       setTimeout(() => setNotes(''), 500);
     } catch (err) {
       showToast(false, '❌ Erreur: ' + (err instanceof Error ? err.message : 'Inconnue'));
@@ -163,9 +139,7 @@ export function Cloture() {
     if (!closure) return;
     setPdfLoading(true);
     try {
-      const txs = getTransactions().filter(
-        (t) => dayjs(t.date).format('YYYY-MM-DD') === closure.date
-      );
+      const txs = getTransactions().filter((t) => dayjs(t.date).format('YYYY-MM-DD') === closure.date);
       await generateRapportPDF(closure, txs);
       showToast(true, '📄 Rapport PDF téléchargé');
     } catch (err) {
@@ -192,33 +166,19 @@ export function Cloture() {
 
   return (
     <div>
-      {/* ── Hero ── */}
       <PageHero
         title="Clôture journalière"
         subtitle={`${dayjs(closure.date).format('dddd D MMMM YYYY')} — contrôle de fin de journée`}
         tall
         actions={
           <>
-            <button
-              className="btn-gradient flex items-center gap-1.5 hover:shadow-lg transition-shadow"
-              onClick={handleRecalc}
-              disabled={isValidated}
-            >
+            <button className="btn-gradient flex items-center gap-1.5 hover:shadow-lg transition-shadow" onClick={handleRecalc} disabled={isValidated}>
               <RefreshCw size={14} /> Recalculer
             </button>
-            <button
-              className="btn-glass flex items-center gap-1.5 hover:shadow-lg transition-shadow"
-              onClick={() => closure && generateBordereauPDF(closure)}
-              title="Télécharger le bordereau PDF officiel"
-            >
+            <button className="btn-glass flex items-center gap-1.5 hover:shadow-lg transition-shadow" onClick={() => closure && generateBordereauPDF(closure)}>
               <FileDown size={14} /> Bordereau PDF
             </button>
-            <button
-              className="btn-glass flex items-center gap-1.5 hover:shadow-lg transition-shadow disabled:opacity-50"
-              onClick={handleRapportPDF}
-              disabled={pdfLoading || !closure}
-              title="Rapport PDF professionnel 8 pages"
-            >
+            <button className="btn-glass flex items-center gap-1.5 hover:shadow-lg transition-shadow disabled:opacity-50" onClick={handleRapportPDF} disabled={pdfLoading || !closure}>
               {pdfLoading ? <RefreshCw size={14} className="animate-spin" /> : <FileText size={14} />}
               📄 Rapport PDF
             </button>
@@ -227,15 +187,8 @@ export function Cloture() {
       />
 
       <div className="page-content space-y-6">
-        {/* ── Toast ── */}
         {toast && (
-          <div
-            className={`rounded-lg border px-4 py-3 text-sm font-medium transition-all ${
-              toast.ok
-                ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-sm'
-                : 'border-red-300 bg-red-50 text-red-800 shadow-sm'
-            }`}
-          >
+          <div className={`rounded-lg border px-4 py-3 text-sm font-medium transition-all ${toast.ok ? 'border-emerald-300 bg-emerald-50 text-emerald-800 shadow-sm' : 'border-red-300 bg-red-50 text-red-800 shadow-sm'}`}>
             {toast.msg}
           </div>
         )}
@@ -248,40 +201,18 @@ export function Cloture() {
               <p>
                 Recalcule les soldes depuis les <strong>transactions</strong>, compare le <strong>réel compté</strong> au{' '}
                 <strong>théorique</strong>, puis faites signer le responsable. Complément physique par devise :{' '}
-                <Link to="/reconciliation" className="font-semibold text-cyan-800 underline">
-                  Vérifier l&apos;argent
-                </Link>
-                .
+                <Link to="/reconciliation" className="font-semibold text-cyan-800 underline">Vérifier l&apos;argent</Link>.
               </p>
             </div>
           </CardContent>
         </Card>
 
-        {/* ── Statut rapide ── */}
         <div className={`flex items-center gap-3 rounded-xl border-2 px-5 py-4 backdrop-blur-sm shadow-sm transition-all ${STATUS_CONFIG[closure.status].bg}`}>
           <StatusIcon size={20} className={STATUS_CONFIG[closure.status].color} />
-          <span className={`text-sm font-bold ${STATUS_CONFIG[closure.status].color}`}>
-            {STATUS_CONFIG[closure.status].label}
-          </span>
-          {closure.manager && (
-            <>
-              <span className="text-zinc-300">·</span>
-              <span className="text-sm text-zinc-600">Signé par <strong>{closure.manager}</strong></span>
-            </>
-          )}
-          {closure.validatedAt && (
-            <>
-              <span className="text-zinc-300">·</span>
-              <span className="text-xs text-zinc-500 font-mono">
-                {dayjs(closure.validatedAt).format('DD/MM HH:mm')}
-              </span>
-            </>
-          )}
-          {isValidated && (
-            <span className="ml-auto flex items-center gap-1 text-emerald-600 text-xs font-bold">
-              <Lock size={14} /> Verrouillée
-            </span>
-          )}
+          <span className={`text-sm font-bold ${STATUS_CONFIG[closure.status].color}`}>{STATUS_CONFIG[closure.status].label}</span>
+          {closure.manager && (<><span className="text-zinc-300">·</span><span className="text-sm text-zinc-600">Signé par <strong>{closure.manager}</strong></span></>)}
+          {closure.validatedAt && (<><span className="text-zinc-300">·</span><span className="text-xs text-zinc-500 font-mono">{dayjs(closure.validatedAt).format('DD/MM HH:mm')}</span></>)}
+          {isValidated && (<span className="ml-auto flex items-center gap-1 text-emerald-600 text-xs font-bold"><Lock size={14} /> Verrouillée</span>)}
         </div>
 
         <ClosureChecklist date={today} />
@@ -356,38 +287,26 @@ export function Cloture() {
             <p className="mt-3 text-[11px] text-zinc-400">Les valeurs saisies sont automatiquement sauvegardées comme snapshot CLÔTURE.</p>
           </CardContent>
         </Card>
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
 
-          {/* === SOLDES === */}
+        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                💰 Soldes caisse
-              </CardTitle>
+              <CardTitle className="text-sm font-bold flex items-center gap-2">💰 Soldes caisse</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Solde initial */}
               <div className="rounded-lg bg-gradient-to-br from-blue-50 to-blue-100/50 px-4 py-3 border border-blue-200">
                 <p className="text-xs font-bold uppercase tracking-wide text-blue-600">Solde initial (J-1)</p>
                 <p className="mt-1.5 text-3xl font-bold tabular-nums text-blue-700">
-                  {fmt(closure.initialBalanceMAD)}
-                  <span className="text-sm font-normal text-blue-500 ml-1">MAD</span>
+                  {fmt(closure.initialBalanceMAD)}<span className="text-sm font-normal text-blue-500 ml-1">MAD</span>
                 </p>
               </div>
-
-              {/* Solde théorique */}
               <div className="rounded-lg bg-gradient-to-br from-zinc-50 to-zinc-100/50 px-4 py-3 border border-zinc-200">
                 <p className="text-xs font-bold uppercase tracking-wide text-zinc-600">Solde théorique</p>
                 <p className="mt-1.5 text-3xl font-bold tabular-nums text-zinc-800">
-                  {fmt(closure.theoreticalBalance)}
-                  <span className="text-sm font-normal text-zinc-500 ml-1">MAD</span>
+                  {fmt(closure.theoreticalBalance)}<span className="text-sm font-normal text-zinc-500 ml-1">MAD</span>
                 </p>
-                <p className="mt-1 text-[10px] text-zinc-500 leading-tight">
-                  Initial + Dépôts − Retraits − Charges + Bénéfice
-                </p>
+                <p className="mt-1 text-[10px] text-zinc-500 leading-tight">Initial + Dépôts − Retraits − Charges + Bénéfice</p>
               </div>
-
-              {/* Solde réel (saisie) */}
               <div>
                 <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-zinc-600">
                   Solde réel constaté <span className="text-red-500">*</span>
@@ -399,41 +318,25 @@ export function Cloture() {
                   onChange={(e) => setRealBalance(parseFloat(e.target.value) || 0)}
                   disabled={isValidated}
                   className={`w-full rounded-lg border-2 px-4 py-3 text-lg font-bold tabular-nums outline-none transition-all ${
-                    isBalanced
-                      ? 'border-emerald-400 bg-emerald-50/50 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200'
-                      : 'border-red-400 bg-red-50/50 focus:border-red-500 focus:ring-2 focus:ring-red-200'
+                    isBalanced ? 'border-emerald-400 bg-emerald-50/50 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200' : 'border-red-400 bg-red-50/50 focus:border-red-500 focus:ring-2 focus:ring-red-200'
                   } disabled:bg-zinc-100 disabled:text-zinc-400`}
                 />
               </div>
-
-              {/* Écart */}
-              <div className={`rounded-lg border-2 px-4 py-3 transition-all ${
-                isBalanced
-                  ? 'border-emerald-300 bg-emerald-50'
-                  : 'border-red-300 bg-red-50'
-              }`}>
+              <div className={`rounded-lg border-2 px-4 py-3 transition-all ${isBalanced ? 'border-emerald-300 bg-emerald-50' : 'border-red-300 bg-red-50'}`}>
                 <p className="text-xs font-bold uppercase tracking-wide text-zinc-600">Écart (Réel − Théorique)</p>
-                <p className={`mt-1.5 text-3xl font-bold tabular-nums ${
-                  isBalanced ? 'text-emerald-600' : 'text-red-600'
-                }`}>
-                  {variance >= 0 ? '+' : ''}{fmt(variance)}
-                  <span className="text-sm font-normal ml-1">MAD</span>
+                <p className={`mt-1.5 text-3xl font-bold tabular-nums ${isBalanced ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {variance >= 0 ? '+' : ''}{fmt(variance)}<span className="text-sm font-normal ml-1">MAD</span>
                 </p>
-                <p className={`mt-1 text-xs font-bold ${
-                  isBalanced ? 'text-emerald-600' : 'text-red-600'
-                }`}>
+                <p className={`mt-1 text-xs font-bold ${isBalanced ? 'text-emerald-600' : 'text-red-600'}`}>
                   {isBalanced ? '✅ Caisse équilibrée' : '⚠️ Écart à justifier'}
                 </p>
               </div>
             </CardContent>
           </Card>
 
-          {/* === TRANSACTIONS DU JOUR === */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-sm font-bold flex items-center gap-2">
-                📊 Transactions du jour
-              </CardTitle>
+              <CardTitle className="text-sm font-bold flex items-center gap-2">📊 Transactions du jour</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-0.5 mb-1">
@@ -443,42 +346,25 @@ export function Cloture() {
                 <RowStat label="Retraits"        value={closure.transactions.totalWithdrawals} colorClass="text-orange-500" />
                 <RowStat label="Charges"         value={closure.transactions.totalCharges}     colorClass="text-zinc-500" />
               </div>
-
-              {/* Bénéfice du jour */}
               <div className="mt-5 rounded-lg border-l-4 border-blue-500 bg-gradient-to-br from-blue-50 to-blue-100/50 px-4 py-3">
                 <p className="text-xs font-bold uppercase tracking-wide text-blue-600">Bénéfice du jour</p>
-                <p className={`mt-1.5 text-2xl font-bold tabular-nums ${
-                  closure.dailyBenefit >= 0 ? 'text-blue-600' : 'text-red-600'
-                }`}>
-                  {closure.dailyBenefit >= 0 ? '+' : ''}{fmt(closure.dailyBenefit)}
-                  <span className="text-sm font-normal text-blue-500 ml-1">MAD</span>
+                <p className={`mt-1.5 text-2xl font-bold tabular-nums ${closure.dailyBenefit >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                  {closure.dailyBenefit >= 0 ? '+' : ''}{fmt(closure.dailyBenefit)}<span className="text-sm font-normal text-blue-500 ml-1">MAD</span>
                 </p>
-                <p className="mt-1 text-[10px] text-blue-500 font-medium">
-                  = Total ventes − Total achats
-                </p>
+                <p className="mt-1 text-[10px] text-blue-500 font-medium">= Total ventes − Total achats</p>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* === SIGNATURE & VALIDATION === */}
         <Card className={isValidated ? 'border-emerald-200 bg-emerald-50/30' : ''}>
           <CardHeader>
             <CardTitle className="text-sm font-bold flex items-center gap-2">
-              {isValidated ? (
-                <>
-                  <CheckCheck size={16} className="text-emerald-600" />
-                  Clôture signée et verrouillée
-                </>
-              ) : (
-                <>✏️ Signature du responsable</>
-              )}
+              {isValidated ? (<><CheckCheck size={16} className="text-emerald-600" />Clôture signée et verrouillée</>) : (<>✏️ Signature du responsable</>)}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-5">
-
-              {/* SignatureBox */}
               <SignatureBox
                 savedValue={closure.signature}
                 nomFallback={closure.manager}
@@ -486,22 +372,14 @@ export function Cloture() {
                 disabled={isValidated}
                 onChange={setSigState}
               />
-
-              {/* Écart warning */}
               {!isBalanced && (
                 <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3">
                   <p className="text-xs font-bold text-red-700">⚠️ Validation bloquée</p>
-                  <p className="mt-1 text-xs text-red-600">
-                    L'écart dépasse 0,01 MAD ({fmt(variance)} MAD). Corrigez le solde réel ou justifiez dans les notes.
-                  </p>
+                  <p className="mt-1 text-xs text-red-600">L'écart dépasse 0,01 MAD ({fmt(variance)} MAD). Corrigez le solde réel ou justifiez dans les notes.</p>
                 </div>
               )}
-
-              {/* Notes */}
               <div>
-                <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-zinc-600">
-                  Notes / Justification écart
-                </label>
+                <label className="mb-2 block text-xs font-bold uppercase tracking-wide text-zinc-600">Notes / Justification écart</label>
                 <textarea
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
@@ -511,40 +389,24 @@ export function Cloture() {
                   className="w-full resize-none rounded-lg border-2 border-zinc-300 px-4 py-2.5 text-sm outline-none transition-all focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
                 />
               </div>
-
-              {/* Valider & Signer */}
               {!isValidated && (
                 <div className="flex gap-3">
                   <button
                     onClick={handleValidate}
                     disabled={!canSign || isSubmitting}
                     className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-bold text-white transition-all ${
-                      canSign && !isSubmitting
-                        ? 'bg-emerald-500 hover:bg-emerald-600 cursor-pointer shadow-md hover:shadow-lg active:scale-[0.98]'
-                        : 'cursor-not-allowed bg-zinc-300 text-zinc-400'
+                      canSign && !isSubmitting ? 'bg-emerald-500 hover:bg-emerald-600 cursor-pointer shadow-md hover:shadow-lg active:scale-[0.98]' : 'cursor-not-allowed bg-zinc-300 text-zinc-400'
                     }`}
                   >
-                    {isSubmitting ? (
-                      <><RefreshCw size={14} className="animate-spin" /> Signature en cours…</>
-                    ) : (
-                      <><CheckCircle size={16} /> Valider &amp; Signer la clôture</>
-                    )}
+                    {isSubmitting ? (<><RefreshCw size={14} className="animate-spin" /> Signature en cours…</>) : (<><CheckCircle size={16} /> Valider &amp; Signer la clôture</>)}
                   </button>
-                  <button
-                    onClick={handleRecalc}
-                    disabled={isSubmitting}
-                    title="Recalculer depuis les transactions"
-                    className="rounded-xl border-2 border-zinc-300 px-4 py-3 text-sm font-medium text-zinc-600 transition-all hover:bg-zinc-50 hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
+                  <button onClick={handleRecalc} disabled={isSubmitting} className="rounded-xl border-2 border-zinc-300 px-4 py-3 text-sm font-medium text-zinc-600 transition-all hover:bg-zinc-50 hover:border-zinc-400 disabled:cursor-not-allowed disabled:opacity-40">
                     <RefreshCw size={14} />
                   </button>
                 </div>
               )}
-
               {!canSign && !isValidated && sigState.isReady && !isBalanced && (
-                <p className="text-center text-xs text-red-500">
-                  Corrigez l'écart de caisse pour pouvoir valider
-                </p>
+                <p className="text-center text-xs text-red-500">Corrigez l'écart de caisse pour pouvoir valider</p>
               )}
             </div>
           </CardContent>
