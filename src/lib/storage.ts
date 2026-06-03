@@ -108,6 +108,14 @@ export const saveExchangeRates = (rates: ExchangeRate[]): void => {
   if (isCloudSyncEnabled()) void cloudPutExchangeRates(rates);
   emitDataChanged();
 };
+export const getBKAMRates = (): ExchangeRate[] => {
+  const data = localStorage.getItem('afromoney_bkam_rates');
+  return data ? JSON.parse(data) : [];
+};
+
+export const saveBKAMRates = (rates: ExchangeRate[]): void => {
+  localStorage.setItem('afromoney_bkam_rates', JSON.stringify(rates));
+};
 
 export const initializeDefaultRates = (): void => {
   if (getExchangeRates().length > 0) return;
