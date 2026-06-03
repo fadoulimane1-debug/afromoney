@@ -8,6 +8,7 @@ import {
   Clock,
   Plus,
   Search,
+  Pencil,
   Trash2,
   X,
   ChevronDown,
@@ -23,6 +24,7 @@ import {
   addReliquat,
   ajouterVersement,
   deleteReliquat,
+  updateReliquat,
   saveReliquats,
   getExchangeRates,
 } from '@/lib/storage';
@@ -419,6 +421,224 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   );
 }
 
+// ─── Modification reliquat modal ───────────────────────────────────────────
+
+function reliquatToEditForm(r: Reliquat): CreateForm {
+  return {
+    client: r.client,
+    categorieClient: r.categorieClient ?? 'HABITUEL',
+    typeOperation: r.devise === 'MAD' ? 'ACHAT' : 'VENTE',
+    devise: r.devise,
+    montantInitial: String(r.montantInitial),
+    operationRef: r.operationRef,
+    operationNumero: r.operationNumero ?? r.operationRef,
+    note: r.note ?? '',
+  };
+}
+
+function EditModal({
+  reliquat,
+  onClose,
+  onUpdated,
+}: {
+  reliquat: Reliquat;
+  onClose: () => void;
+  onUpdated: () => void;
+}) {
+  const [form, setForm] = useState<CreateForm>(() => reliquatToEditForm(reliquat));
+  const [errors, setErrors] = useState<CreateErrors>({});
+  const [saveError, setSaveError] = useState('');
+  const totalVerse = reliquat.versements.reduce((s, v) => s + v.montant, 0);
+  const deviseVerrouillee = form.typeOperation === 'ACHAT';
+
+  function set(field: keyof CreateForm, val: string) {
+    setForm((f) => {
+      const next = { ...f, [field]: val };
+      if (field === 'typeOperation') {
+        next.devise = val === 'ACHAT' ? 'MAD' : (f.devise === 'MAD' ? 'EUR' : f.devise);
+      }
+      return next;
+    });
+    setErrors((e) => ({ ...e, [field]: undefined }));
+    setSaveError('');
+  }
+
+  function handleSave() {
+    const errs = validateCreate(form);
+    const montant = parseFloat(form.montantInitial);
+    if (reliquat.versements.length > 0 && montant < totalVerse - 0.005) {
+      errs.montantInitial = `Minimum ${fmt(totalVerse)} ${reliquat.devise} (versements déjà enregistrés)`;
+    }
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+    const today = todayStr();
+    const updated = updateReliquat(reliquat.id, {
+      client: form.client.trim(),
+      categorieClient: form.categorieClient,
+      devise: form.devise,
+      montantInitial: montant,
+      operationRef: form.operationRef.trim(),
+      operationNumero: form.operationNumero.trim() || undefined,
+      note: form.note.trim() || undefined,
+    });
+    if (!updated) {
+      setSaveError('Modification impossible — rechargez la page puis réessayez.');
+      return;
+    }
+    void updateReliquatInSupabase(reliquat.id, {
+      client: updated.client,
+      categorie_client: updated.categorieClient ?? null,
+      operation_ref: updated.operationRef,
+      operation_numero: updated.operationNumero ?? null,
+      devise: updated.devise,
+      montant_initial: updated.montantInitial,
+      montant_restant: updated.montantRestant,
+      statut: updated.statut,
+      note: updated.note ?? null,
+      date_maj: today,
+    });
+    void apiUpdateReliquat(reliquat.id, {
+      client: updated.client,
+      categorieClient: updated.categorieClient,
+      operationRef: updated.operationRef,
+      operationNumero: updated.operationNumero ?? null,
+      devise: updated.devise,
+      montantInitial: updated.montantInitial,
+      montantRestant: updated.montantRestant,
+      statut: updated.statut,
+      note: updated.note ?? null,
+      dateMaj: new Date().toISOString(),
+    }).catch((err) => console.error('[MongoDB] updateReliquat:', err));
+    logAudit(AUDIT_ACTIONS.RELIQUAT_UPDATE, {
+      id: reliquat.id,
+      client: updated.client,
+      devise: updated.devise,
+      montantInitial: updated.montantInitial,
+    }, today);
+    onUpdated();
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-xl border border-zinc-300 bg-white p-6 shadow-2xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h3 className="font-semibold text-zinc-900">Modifier le reliquat</h3>
+          <button type="button" onClick={onClose} className="text-zinc-500 hover:text-zinc-800">
+            <X size={18} />
+          </button>
+        </div>
+
+        {reliquat.versements.length > 0 && (
+          <p className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+            Versements enregistrés : {fmt(totalVerse)} {reliquat.devise}. Le montant initial ne peut pas être inférieur à ce total.
+          </p>
+        )}
+
+        <div className="space-y-4">
+          <div>
+            <label className="mb-1 block text-xs font-semibold text-zinc-600">Type d&apos;opération *</label>
+            <div className="flex overflow-hidden rounded-lg border border-zinc-300 bg-white text-sm">
+              {(['ACHAT', 'VENTE'] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => set('typeOperation', t)}
+                  className={[
+                    'flex-1 py-2 px-3 text-xs font-bold transition-colors',
+                    form.typeOperation === t
+                      ? t === 'ACHAT'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-amber-500 text-white'
+                      : 'text-zinc-500 hover:bg-zinc-50',
+                  ].join(' ')}
+                >
+                  {t === 'ACHAT' ? '📥 ACHAT devise' : '📤 VENTE devise'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Client *" error={errors.client}>
+              <Input
+                value={form.client}
+                onChange={(e) => set('client', e.target.value)}
+                className={errors.client ? 'border-red-400' : ''}
+              />
+            </Field>
+            <Field label="Catégorie client">
+              <NativeSelect value={form.categorieClient} onChange={(v) => set('categorieClient', v)}>
+                <option value="HABITUEL">HABITUEL</option>
+                <option value="AMI">AMI</option>
+              </NativeSelect>
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Devise dûe *" error={errors.devise} hint={deviseVerrouillee ? 'ACHAT → MAD' : undefined}>
+              {deviseVerrouillee ? (
+                <div className="flex h-9 cursor-not-allowed select-none items-center rounded-md border border-zinc-200 bg-zinc-100 px-3 text-sm font-bold text-zinc-500">
+                  MAD 🔒
+                </div>
+              ) : (
+                <NativeSelect value={form.devise} onChange={(v) => set('devise', v)} hasError={!!errors.devise}>
+                  {DEVISES.filter((d) => d !== 'MAD').map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </NativeSelect>
+              )}
+            </Field>
+            <Field label={`Montant initial (${form.devise}) *`} error={errors.montantInitial}>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.montantInitial}
+                onChange={(e) => set('montantInitial', e.target.value)}
+                className={errors.montantInitial ? 'border-red-400' : ''}
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Réf. opération *" error={errors.operationRef}>
+              <Input
+                value={form.operationRef}
+                onChange={(e) => set('operationRef', e.target.value)}
+                className={`font-mono text-sm ${errors.operationRef ? 'border-red-400' : ''}`}
+              />
+            </Field>
+            <Field label="N° bordereau">
+              <Input
+                value={form.operationNumero}
+                onChange={(e) => set('operationNumero', e.target.value)}
+                className="font-mono text-sm"
+              />
+            </Field>
+          </div>
+
+          <Field label="Note">
+            <Input value={form.note} onChange={(e) => set('note', e.target.value)} placeholder="Remarque..." />
+          </Field>
+
+          {saveError && <p className="text-xs font-medium text-red-500">{saveError}</p>}
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="outline" type="button" onClick={onClose}>Annuler</Button>
+          <Button type="button" onClick={handleSave} className="bg-blue-600 text-white hover:bg-blue-700">
+            <Pencil size={14} className="mr-1" />
+            Enregistrer
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Soldage modal ────────────────────────────────────────────────────────────
 
 function SolderModal({
@@ -672,6 +892,7 @@ export function Reliquats() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [showCreate, setShowCreate] = useState(false);
+  const [editTarget, setEditTarget] = useState<Reliquat | null>(null);
   const [solderTarget, setSolderTarget] = useState<Reliquat | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
@@ -963,6 +1184,15 @@ export function Reliquats() {
                               </button>
                             )}
                             <button
+                              type="button"
+                              onClick={() => setEditTarget(r)}
+                              className="rounded-md p-1 text-zinc-400 transition-colors hover:bg-blue-50 hover:text-blue-600"
+                              title="Modifier"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => setConfirmDelete(r.id)}
                               className="rounded-md p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 transition-colors"
                               title="Supprimer"
@@ -1006,6 +1236,14 @@ export function Reliquats() {
         <CreateModal
           onClose={() => setShowCreate(false)}
           onCreated={() => { refresh(); showToast('Reliquat créé avec succès.'); }}
+        />
+      )}
+
+      {editTarget && (
+        <EditModal
+          reliquat={editTarget}
+          onClose={() => setEditTarget(null)}
+          onUpdated={() => { refresh(); showToast('Reliquat modifié.'); }}
         />
       )}
 
