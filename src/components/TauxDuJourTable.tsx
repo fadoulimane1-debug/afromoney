@@ -7,8 +7,9 @@ import {
   repairAllRatesSpread,
   setExchangeRatesManualLock,
   type RatesMeta,
-  type RatesSource,
+  type RatesFetchOutcome,
 } from '@/lib/bkamRates';
+import type { ExchangeRate } from '@/types';
 import type { useNotify } from '@/hooks/useNotify';
 
 const DEVISES_ORDER = ['EUR', 'USD', 'GBP', 'CAD', 'SAR', 'AED', 'CHF', 'KWD'] as const;
@@ -78,24 +79,42 @@ function loadRows(): RateRow[] {
 
 type ReferenceSource = 'BKAM' | 'CDN' | null;
 
+function ratesToDisplayRows(rates: ExchangeRate[]): RateRow[] {
+  return DEVISES_ORDER.map((devise) => {
+    const r = rates.find((x) => x.devise === devise);
+    return {
+      devise,
+      label: DEVISE_LABELS[devise] ?? devise,
+      tauxAchat: r?.tauxAchat ?? 0,
+      tauxVente: r?.tauxVente ?? 0,
+    };
+  });
+}
+
+function validRefCount(rates: ExchangeRate[]): number {
+  return rates.filter((r) => r.tauxAchat > 0 && r.tauxVente > r.tauxAchat).length;
+}
+
 /** Référence marché (BKAM ou CDN) — jamais les taux bureau saisis à droite. */
 function loadReferenceDisplay(): { rows: RateRow[]; source: ReferenceSource } {
   const bkam = getBKAMRates();
-  const hasBkam = bkam.some((r) => r.tauxAchat > 0 && r.tauxVente > 0);
-  const ref = hasBkam ? bkam : getCdnReferenceRates();
-  const source: ReferenceSource = hasBkam ? 'BKAM' : ref.some((r) => r.tauxAchat > 0) ? 'CDN' : null;
-  return {
-    source,
-    rows: DEVISES_ORDER.map((devise) => {
-      const r = ref.find((x) => x.devise === devise);
-      return {
-        devise,
-        label: DEVISE_LABELS[devise] ?? devise,
-        tauxAchat: r?.tauxAchat ?? 0,
-        tauxVente: r?.tauxVente ?? 0,
-      };
-    }),
-  };
+  const cdn = getCdnReferenceRates();
+  const useBkam = validRefCount(bkam) >= 3;
+  const useCdn = !useBkam && validRefCount(cdn) >= 3;
+  const ref = useBkam ? bkam : useCdn ? cdn : [];
+  const source: ReferenceSource = useBkam ? 'BKAM' : useCdn ? 'CDN' : null;
+  return { source, rows: ratesToDisplayRows(ref) };
+}
+
+function applyFetchedReference(outcome: RatesFetchOutcome): ReferenceSource {
+  const n = validRefCount(outcome.reference);
+  if (n < 3) return loadReferenceDisplay().source;
+  const source: ReferenceSource =
+    outcome.source === 'BKAM' ? 'BKAM' : outcome.source === 'CDN' ? 'CDN' : null;
+  if (source) {
+    return source;
+  }
+  return loadReferenceDisplay().source;
 }
 
 function rowsToEditState(rows: RateRow[]): EditState {
@@ -115,7 +134,7 @@ export function TauxDuJourTable({
 }: {
   meta: RatesMeta | null;
   loading: boolean;
-  onRefresh: (options?: { force?: boolean }) => Promise<RatesSource>;
+  onRefresh: (options?: { force?: boolean }) => Promise<RatesFetchOutcome>;
   notify: ReturnType<typeof useNotify>;
 }) {
   const [rows, setRows] = useState<RateRow[]>(() => loadRows());
@@ -148,25 +167,37 @@ export function TauxDuJourTable({
   }, []);
 
   async function handleRefresh() {
-    const src = await onRefresh({ force: isExchangeRatesManualLock() });
-    const ref = loadReferenceDisplay();
-    setDisplayRows(ref.rows);
-    setRefSource(ref.source);
+    const outcome = await onRefresh({ force: isExchangeRatesManualLock() });
+    const n = validRefCount(outcome.reference);
+    if (n >= 3) {
+      setDisplayRows(ratesToDisplayRows(outcome.reference));
+      setRefSource(applyFetchedReference(outcome));
+    } else {
+      const ref = loadReferenceDisplay();
+      setDisplayRows(ref.rows);
+      setRefSource(ref.source);
+    }
     if (!isExchangeRatesManualLock()) {
       const r = loadRows();
       setRows(r);
       setEditState(rowsToEditState(r));
     }
-    if (src === 'BKAM') notify.success('Référence Bank Al-Maghrib chargée (panneau gauche).', 'Taux du jour');
-    else if (src === 'CDN') {
+    const shown = n >= 3 ? applyFetchedReference(outcome) : loadReferenceDisplay().source;
+    if (outcome.source === 'BKAM' && shown === 'BKAM') {
+      notify.success('Référence Bank Al-Maghrib affichée à gauche.', 'Taux du jour');
+    } else if (outcome.source === 'CDN' && shown === 'CDN') {
       if (!isExchangeRatesManualLock()) repairAllRatesSpread();
       notify.info(
         isExchangeRatesManualLock()
-          ? 'BKAM indisponible — référence CDN affichée à gauche. Vos taux bureau (droite) sont inchangés.'
+          ? 'Référence CDN affichée à gauche. Vos taux bureau (droite) inchangés.'
           : 'Référence CDN à gauche + taux bureau mis à jour à droite.',
         'Taux du jour',
       );
-    } else notify.warning('Aucune source en ligne — gardez l’édition manuelle à droite.', 'Taux du jour');
+    } else if (shown) {
+      notify.info('Référence chargée depuis le cache local.', 'Taux du jour');
+    } else {
+      notify.warning('Impossible de charger une référence — réessayez ou saisissez à droite.', 'Taux du jour');
+    }
   }
 
   function setField(devise: string, field: 'achat' | 'vente', value: string) {
