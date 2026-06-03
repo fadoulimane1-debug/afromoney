@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { Eye, Pencil, RefreshCw } from 'lucide-react';
-import { getBKAMRates, getExchangeRates, saveExchangeRates } from '@/lib/storage';
+import { getBKAMRates, getCdnReferenceRates, getExchangeRates, saveExchangeRates } from '@/lib/storage';
 import {
   isExchangeRatesManualLock,
   repairAllRatesSpread,
@@ -76,22 +76,26 @@ function loadRows(): RateRow[] {
   });
 }
 
-/** Référence BKAM officielle uniquement — jamais les taux bureau (exchangeRates). */
-function loadBkamDisplayRows(): RateRow[] {
-  const bkam = getBKAMRates();
-  return DEVISES_ORDER.map((devise) => {
-    const r = bkam.find((x) => x.devise === devise);
-    return {
-      devise,
-      label: DEVISE_LABELS[devise] ?? devise,
-      tauxAchat: r?.tauxAchat ?? 0,
-      tauxVente: r?.tauxVente ?? 0,
-    };
-  });
-}
+type ReferenceSource = 'BKAM' | 'CDN' | null;
 
-function hasBkamReference(): boolean {
-  return getBKAMRates().some((r) => r.tauxAchat > 0 && r.tauxVente > 0);
+/** Référence marché (BKAM ou CDN) — jamais les taux bureau saisis à droite. */
+function loadReferenceDisplay(): { rows: RateRow[]; source: ReferenceSource } {
+  const bkam = getBKAMRates();
+  const hasBkam = bkam.some((r) => r.tauxAchat > 0 && r.tauxVente > 0);
+  const ref = hasBkam ? bkam : getCdnReferenceRates();
+  const source: ReferenceSource = hasBkam ? 'BKAM' : ref.some((r) => r.tauxAchat > 0) ? 'CDN' : null;
+  return {
+    source,
+    rows: DEVISES_ORDER.map((devise) => {
+      const r = ref.find((x) => x.devise === devise);
+      return {
+        devise,
+        label: DEVISE_LABELS[devise] ?? devise,
+        tauxAchat: r?.tauxAchat ?? 0,
+        tauxVente: r?.tauxVente ?? 0,
+      };
+    }),
+  };
 }
 
 function rowsToEditState(rows: RateRow[]): EditState {
@@ -115,7 +119,8 @@ export function TauxDuJourTable({
   notify: ReturnType<typeof useNotify>;
 }) {
   const [rows, setRows] = useState<RateRow[]>(() => loadRows());
-  const [displayRows, setDisplayRows] = useState<RateRow[]>(() => loadBkamDisplayRows());
+  const [displayRows, setDisplayRows] = useState<RateRow[]>(() => loadReferenceDisplay().rows);
+  const [refSource, setRefSource] = useState<ReferenceSource>(() => loadReferenceDisplay().source);
   const [editState, setEditState] = useState<EditState>(() => rowsToEditState(loadRows()));
   const [lastSaved, setLastSaved] = useState<string | null>(() => getLastSavedDate());
   const skipReloadRef = useRef(false);
@@ -128,7 +133,9 @@ export function TauxDuJourTable({
       setEditState(rowsToEditState(r));
     }
     function reloadBkamOnly() {
-      setDisplayRows(loadBkamDisplayRows());
+      const ref = loadReferenceDisplay();
+      setDisplayRows(ref.rows);
+      setRefSource(ref.source);
     }
     reloadManual();
     reloadBkamOnly();
@@ -142,17 +149,24 @@ export function TauxDuJourTable({
 
   async function handleRefresh() {
     const src = await onRefresh({ force: isExchangeRatesManualLock() });
-    setDisplayRows(loadBkamDisplayRows());
+    const ref = loadReferenceDisplay();
+    setDisplayRows(ref.rows);
+    setRefSource(ref.source);
     if (!isExchangeRatesManualLock()) {
       const r = loadRows();
       setRows(r);
       setEditState(rowsToEditState(r));
     }
-    if (src === 'BKAM') notify.success('Référence BKAM mise à jour (panneau Affichage).', 'Taux du jour');
+    if (src === 'BKAM') notify.success('Référence Bank Al-Maghrib chargée (panneau gauche).', 'Taux du jour');
     else if (src === 'CDN') {
       if (!isExchangeRatesManualLock()) repairAllRatesSpread();
-      notify.info('CDN appliqué à l’édition bureau uniquement.', 'Taux du jour');
-    } else notify.warning('BKAM inaccessible — édition manuelle inchangée.', 'Taux du jour');
+      notify.info(
+        isExchangeRatesManualLock()
+          ? 'BKAM indisponible — référence CDN affichée à gauche. Vos taux bureau (droite) sont inchangés.'
+          : 'Référence CDN à gauche + taux bureau mis à jour à droite.',
+        'Taux du jour',
+      );
+    } else notify.warning('Aucune source en ligne — gardez l’édition manuelle à droite.', 'Taux du jour');
   }
 
   function setField(devise: string, field: 'achat' | 'vente', value: string) {
@@ -323,7 +337,9 @@ export function TauxDuJourTable({
           <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-100 px-3 py-1.5">
             <div className="flex items-center gap-1.5">
               <Eye size={13} className="text-zinc-400" />
-              <span className="text-[12px] font-semibold text-zinc-600">Affichage BKAM</span>
+              <span className="text-[12px] font-semibold text-zinc-600">
+                {refSource === 'BKAM' ? 'Référence BKAM' : refSource === 'CDN' ? 'Référence CDN' : 'Référence marché'}
+              </span>
               <span className="text-[11px] text-zinc-400">· {syncLabel}</span>
             </div>
             <button
@@ -364,11 +380,15 @@ export function TauxDuJourTable({
           </table>
 
           <div className="border-t border-zinc-200 px-3 py-1 text-[10px] text-zinc-400">
-            {hasBkamReference() ? (
-              <span>Référence BKAM officielle — indépendante de l’édition manuelle (bureau).</span>
+            {refSource === 'BKAM' ? (
+              <span>Référence Bank Al-Maghrib — lecture seule, distincte de vos taux bureau (droite).</span>
+            ) : refSource === 'CDN' ? (
+              <span className="text-blue-800">
+                BKAM indisponible — cours CDN affichés ici à titre indicatif (pas vos saisies manuelles).
+              </span>
             ) : (
               <span className="text-amber-700">
-                Pas encore de réf. BKAM — cliquez <strong>Rafraîchir</strong> (les taux bureau restent à droite).
+                Aucune référence chargée — cliquez <strong>Rafraîchir</strong>. À droite : vos taux bureau.
               </span>
             )}
             {' · '}
