@@ -41,6 +41,7 @@ import {
 import type { ApiReliquat } from '@/lib/mongoApiClient';
 import { DEVISES, TAUX_PAR_DEFAUT } from '@/lib/constants';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
+import { getNextOperationNumber } from '@/lib/numerotation';
 import type { Reliquat, StatutReliquat } from '@/types';
 import { fmt } from '@/lib/formatNumbers';
 
@@ -187,8 +188,8 @@ function emptyCreate(): CreateForm {
     typeOperation: 'ACHAT',
     devise: 'MAD',
     montantInitial: '',
-    operationRef: '',
-    operationNumero: '',
+    operationRef: getNextOperationNumber(),
+    operationNumero: getNextOperationNumber(),
     note: '',
   };
 }
@@ -675,6 +676,14 @@ export function Reliquats() {
 
   async function loadReliquats() {
     setLoading(true);
+    // Priorité : localStorage (toujours disponible)
+    const local = getReliquatsLocal();
+    if (local.length > 0) {
+      setReliquats(local);
+      setLoading(false);
+      return;
+    }
+    // Fallback : MongoDB puis Supabase
     try {
       const mongoRows = await apiGetReliquats();
       if (mongoRows.length > 0) {
@@ -683,12 +692,12 @@ export function Reliquats() {
         return;
       }
     } catch { /* backend non disponible */ }
-    const supaRows = await fetchSupaReliquats();
-    if (supaRows.length > 0) {
-      setReliquats(supaRows.map(dbToLocalReliquat));
-    } else {
-      setReliquats(getReliquatsLocal());
-    }
+    try {
+      const supaRows = await fetchSupaReliquats();
+      if (supaRows.length > 0) {
+        setReliquats(supaRows.map(dbToLocalReliquat));
+      }
+    } catch { /* supabase non disponible */ }
     setLoading(false);
   }
 
