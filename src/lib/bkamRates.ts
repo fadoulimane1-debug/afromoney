@@ -10,7 +10,7 @@
 
 import type { ExchangeRate } from '@/types';
 import { DEVISES, TAUX_BUREAU_DEFAUT, TAUX_PAR_DEFAUT } from '@/lib/constants';
-import { getExchangeRates, saveBKAMRates, saveExchangeRates } from '@/lib/storage';
+import { getExchangeRates, saveBKAMRates, saveCdnReferenceRates, saveExchangeRates } from '@/lib/storage';
 
 /* ── Types publics ── */
 
@@ -247,9 +247,10 @@ export async function fetchAndSaveRates(options?: { force?: boolean }): Promise<
     /* BKAM indisponible → essayer CDN */
   }
 
-  // 2. CDN
+  // 2. CDN (référence marché si BKAM down — panneau Affichage, pas l’édition verrouillée)
   try {
     const cdn = await tryCDN();
+    saveCdnReferenceRates(cdn);
     if (!manualLocked) {
       const merged = mergeRates(cdn, existing);
       saveExchangeRates(merged);
