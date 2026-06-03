@@ -100,7 +100,7 @@ export function Layout() {
     function scheduleNineAM() {
       const delay = msUntilNineAM();
       nineTimer = setTimeout(async () => {
-        const source = await fetchAndSaveRates();
+        const { source } = await fetchAndSaveRates();
         addNotif(
           source === 'BKAM' || source === 'CDN' ? 'success' : 'warning',
           source === 'BKAM'
