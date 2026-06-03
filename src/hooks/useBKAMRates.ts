@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchAndSaveRates, getCachedMeta, type RatesMeta, type RatesSource } from '@/lib/bkamRates';
+import {
+  fetchAndSaveRates,
+  getCachedMeta,
+  type RatesFetchOutcome,
+  type RatesMeta,
+} from '@/lib/bkamRates';
 
 interface UseBKAMRatesResult {
   meta: RatesMeta | null;
   loading: boolean;
-  refresh: () => Promise<RatesSource>;
+  refresh: (options?: { force?: boolean }) => Promise<RatesFetchOutcome>;
 }
 
 /**
@@ -22,12 +27,12 @@ export function useBKAMRates(): UseBKAMRatesResult {
     return () => window.removeEventListener('afromoney-data', handler);
   }, []);
 
-  const refresh = useCallback(async (): Promise<RatesSource> => {
+  const refresh = useCallback(async (options?: { force?: boolean }): Promise<RatesFetchOutcome> => {
     setLoading(true);
     try {
-      const source = await fetchAndSaveRates();
+      const outcome = await fetchAndSaveRates(options);
       setMeta(getCachedMeta());
-      return source;
+      return outcome;
     } finally {
       setLoading(false);
     }
