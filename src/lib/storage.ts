@@ -114,6 +114,25 @@ export const getBKAMRates = (): ExchangeRate[] => {
   return data ? JSON.parse(data) : [];
 };
 
+const CDN_REFERENCE_KEY = 'afromoney_cdn_reference_rates';
+
+/** Référence marché CDN (quand BKAM est indisponible) — jamais l’édition manuelle bureau. */
+export const getCdnReferenceRates = (): ExchangeRate[] => {
+  try {
+    const data = localStorage.getItem(CDN_REFERENCE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const saveCdnReferenceRates = (rates: ExchangeRate[]): void => {
+  localStorage.setItem(CDN_REFERENCE_KEY, JSON.stringify(rates));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('afromoney-bkam-rates'));
+  }
+};
+
 export const saveBKAMRates = (rates: ExchangeRate[]): void => {
   localStorage.setItem('afromoney_bkam_rates', JSON.stringify(rates));
   if (typeof window !== 'undefined') {
