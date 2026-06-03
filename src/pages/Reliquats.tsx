@@ -23,6 +23,7 @@ import {
   addReliquat,
   ajouterVersement,
   deleteReliquat,
+  saveReliquats,
   getExchangeRates,
 } from '@/lib/storage';
 import { supabase } from '@/lib/supabase';
@@ -41,7 +42,6 @@ import {
 import type { ApiReliquat } from '@/lib/mongoApiClient';
 import { DEVISES, TAUX_PAR_DEFAUT } from '@/lib/constants';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
-import { getNextOperationNumber } from '@/lib/numerotation';
 import type { Reliquat, StatutReliquat } from '@/types';
 import { fmt } from '@/lib/formatNumbers';
 
@@ -188,8 +188,8 @@ function emptyCreate(): CreateForm {
     typeOperation: 'ACHAT',
     devise: 'MAD',
     montantInitial: '',
-    operationRef: getNextOperationNumber(),
-    operationNumero: getNextOperationNumber(),
+    operationRef: '',
+    operationNumero: '',
     note: '',
   };
 }
@@ -443,7 +443,10 @@ function SolderModal({
     }
     const today = todayStr();
     const updated = ajouterVersement(reliquat.id, { date: today, montant: val, note: note.trim() || undefined });
-    if (!updated) return;
+    if (!updated) {
+      setError('Reliquat introuvable en local — rechargez la page puis réessayez.');
+      return;
+    }
     void updateReliquatInSupabase(reliquat.id, {
       montant_restant: updated.montantRestant,
       statut: updated.statut,
@@ -557,7 +560,7 @@ function SolderModal({
 
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>Annuler</Button>
-          <Button onClick={handleSave} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+          <Button type="button" onClick={handleSave} className="bg-emerald-600 hover:bg-emerald-700 text-white">
             <CheckCircle size={14} className="mr-1" />
             Enregistrer versement
           </Button>
@@ -676,18 +679,18 @@ export function Reliquats() {
 
   async function loadReliquats() {
     setLoading(true);
-    // Priorité : localStorage (toujours disponible)
     const local = getReliquatsLocal();
     if (local.length > 0) {
       setReliquats(local);
       setLoading(false);
       return;
     }
-    // Fallback : MongoDB puis Supabase
     try {
       const mongoRows = await apiGetReliquats();
       if (mongoRows.length > 0) {
-        setReliquats(mongoRows.map(mongoToLocalReliquat));
+        const mapped = mongoRows.map(mongoToLocalReliquat);
+        saveReliquats(mapped);
+        setReliquats(mapped);
         setLoading(false);
         return;
       }
@@ -695,14 +698,19 @@ export function Reliquats() {
     try {
       const supaRows = await fetchSupaReliquats();
       if (supaRows.length > 0) {
-        setReliquats(supaRows.map(dbToLocalReliquat));
+        const mapped = supaRows.map(dbToLocalReliquat);
+        saveReliquats(mapped);
+        setReliquats(mapped);
+        setLoading(false);
+        return;
       }
     } catch { /* supabase non disponible */ }
+    setReliquats([]);
     setLoading(false);
   }
 
+  /** Recharge depuis localStorage après solder / supprimer / créer (évite de réimporter Mongo). */
   const refresh = () => {
-    // Toujours recharger depuis localStorage directement (pas de réseau)
     setReliquats(getReliquatsLocal());
   };
 
@@ -721,14 +729,16 @@ export function Reliquats() {
 
   function handleDelete(id: string) {
     deleteReliquat(id);
-    supabase.from('reliquats').delete().eq('id', id).then(({ error }) => {
-      if (error) console.error('[supabase] deleteReliquat:', error);
-    });
-    void apiDeleteReliquat(id).catch((err) => console.error('[MongoDB] deleteReliquat:', err));
     logAudit(AUDIT_ACTIONS.RELIQUAT_DELETE, { id }, todayStr());
     refresh();
     setConfirmDelete(null);
     showToast('Reliquat supprimé.');
+    if (/^[a-f\d]{24}$/i.test(id)) {
+      void apiDeleteReliquat(id).catch((err) => console.error('[MongoDB] deleteReliquat:', err));
+    }
+    void supabase?.from('reliquats').delete().eq('id', id).then(({ error }) => {
+      if (error) console.error('[supabase] deleteReliquat:', error);
+    });
   }
 
   // filtrage + tri
@@ -974,6 +984,7 @@ export function Reliquats() {
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setConfirmDelete(null)}>Annuler</Button>
                 <Button
+                  type="button"
                   onClick={() => handleDelete(confirmDelete)}
                   className="bg-red-600 hover:bg-red-700 text-white"
                 >
