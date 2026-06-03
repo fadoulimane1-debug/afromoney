@@ -116,6 +116,9 @@ export const getBKAMRates = (): ExchangeRate[] => {
 
 export const saveBKAMRates = (rates: ExchangeRate[]): void => {
   localStorage.setItem('afromoney_bkam_rates', JSON.stringify(rates));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('afromoney-bkam-rates'));
+  }
 };
 
 export const initializeDefaultRates = (): void => {
