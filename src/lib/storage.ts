@@ -222,8 +222,8 @@ export const calculateStock = (
 
 export const calculateCaisse = (): number =>
   filterTransactionsComptables(getTransactions()).reduce((caisse, t) => {
-    if (t.type === 'DEPOT') return caisse + (t.devise === 'MAD' ? t.montant : t.montantMAD);
-    if (t.type === 'RETRAIT') return caisse - (t.devise === 'MAD' ? t.montant : t.montantMAD);
+    if (t.type === 'DEPOT')   return caisse + (t.devise === 'MAD' ? t.montant : 0);
+    if (t.type === 'RETRAIT') return caisse - (t.devise === 'MAD' ? t.montant : 0);
     if (t.type === 'CHARGES') return caisse - t.montantMAD;
     return caisse;
   }, 0);
@@ -300,10 +300,15 @@ export const calculateDailyClosure = (date: string): DailyClosure => {
       .filter((t) => t.type === type)
       .reduce((acc, t) => acc + (t.montantMAD ?? 0), 0);
 
+  const sumMADOnly = (type: string) =>
+    dayTransactions
+      .filter((t) => t.type === type && t.devise === 'MAD')
+      .reduce((acc, t) => acc + (t.montant ?? 0), 0);
+
   const totalBuys        = sum('ACHAT');
   const totalSells       = sum('VENTE');
-  const totalDeposits    = sum('DEPOT');
-  const totalWithdrawals = sum('RETRAIT');
+  const totalDeposits    = sumMADOnly('DEPOT');
+  const totalWithdrawals = sumMADOnly('RETRAIT');
   const totalCharges     = sum('CHARGES');
 
   const prevValidated = getLastValidatedClosureBefore(date);
