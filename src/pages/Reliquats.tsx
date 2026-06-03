@@ -701,7 +701,10 @@ export function Reliquats() {
     setLoading(false);
   }
 
-  const refresh = () => { void loadReliquats(); };
+  const refresh = () => {
+    // Toujours recharger depuis localStorage directement (pas de réseau)
+    setReliquats(getReliquatsLocal());
+  };
 
   useEffect(() => { void loadReliquats(); }, []);
 
