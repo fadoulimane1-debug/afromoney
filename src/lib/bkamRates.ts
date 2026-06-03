@@ -10,7 +10,14 @@
 
 import type { ExchangeRate } from '@/types';
 import { DEVISES, TAUX_BUREAU_DEFAUT, TAUX_PAR_DEFAUT } from '@/lib/constants';
-import { getExchangeRates, saveBKAMRates, saveCdnReferenceRates, saveExchangeRates } from '@/lib/storage';
+import {
+  getBKAMRates,
+  getCdnReferenceRates,
+  getExchangeRates,
+  saveBKAMRates,
+  saveCdnReferenceRates,
+  saveExchangeRates,
+} from '@/lib/storage';
 
 /* ── Types publics ── */
 
@@ -19,6 +26,12 @@ export type RatesSource = 'BKAM' | 'CDN' | 'cache' | 'default';
 export interface RatesMeta {
   fetchedAt: string;   // ISO
   source: RatesSource;
+}
+
+/** Taux de référence renvoyés après un fetch (pour le panneau Affichage). */
+export interface RatesFetchOutcome {
+  source: RatesSource;
+  reference: ExchangeRate[];
 }
 
 /* ── Clés localStorage ── */
@@ -172,10 +185,8 @@ function mergeRates(fetched: ExchangeRate[], existing: ExchangeRate[]): Exchange
 
 /* ── Fetch BKAM ── */
 async function tryBKAM(): Promise<ExchangeRate[]> {
-  const url =
-    typeof import.meta !== 'undefined' && import.meta.env?.DEV
-      ? '/api/bkam/websitedata/Taux_de_Change.json'
-      : 'https://www.bkam.ma/websitedata/Taux_de_Change.json';
+  /** Proxy same-origin (Vite dev + rewrite Vercel) — évite CORS sur bkam.ma */
+  const url = '/api/bkam/websitedata/Taux_de_Change.json';
   const res = await fetch(url, {
     signal: timeoutSignal(8_000),
     cache: 'no-cache',
@@ -225,9 +236,29 @@ function isCacheStale(maxAgeHours = 4): boolean {
 
 /* ── Fetch principal (BKAM → CDN → cache → default) ── */
 
-export async function fetchAndSaveRates(options?: { force?: boolean }): Promise<RatesSource> {
+function countValidRates(rates: ExchangeRate[]): number {
+  return rates.filter((r) => r.tauxAchat > 0 && r.tauxVente > r.tauxAchat).length;
+}
+
+function cachedReferenceOutcome(): RatesFetchOutcome {
+  const bkam = getBKAMRates();
+  if (countValidRates(bkam) >= 3) {
+    return { source: getCachedMeta()?.source ?? 'BKAM', reference: mergeRates(bkam, []) };
+  }
+  const cdn = getCdnReferenceRates();
+  if (countValidRates(cdn) >= 3) {
+    return { source: 'CDN', reference: cdn };
+  }
+  const existing = getExchangeRates();
+  if (existing.length > 0) {
+    return { source: getCachedMeta()?.source ?? 'cache', reference: mergeRates(existing, []) };
+  }
+  return { source: 'default', reference: [] };
+}
+
+export async function fetchAndSaveRates(options?: { force?: boolean }): Promise<RatesFetchOutcome> {
   if (!options?.force && isExchangeRatesManualLock()) {
-    return getCachedMeta()?.source ?? 'cache';
+    return cachedReferenceOutcome();
   }
 
   const existing = getExchangeRates();
@@ -236,13 +267,13 @@ export async function fetchAndSaveRates(options?: { force?: boolean }): Promise<
   // 1. BKAM
   try {
     const bkam = await tryBKAM();
-    saveBKAMRates(bkam);
+    const reference = mergeRates(bkam, []);
+    saveBKAMRates(reference);
     if (!manualLocked) {
-      const merged = mergeRates(bkam, existing);
-      saveExchangeRates(merged);
+      saveExchangeRates(mergeRates(bkam, existing));
     }
     saveMeta('BKAM');
-    return 'BKAM';
+    return { source: 'BKAM', reference };
   } catch {
     /* BKAM indisponible → essayer CDN */
   }
@@ -250,25 +281,18 @@ export async function fetchAndSaveRates(options?: { force?: boolean }): Promise<
   // 2. CDN (référence marché si BKAM down — panneau Affichage, pas l’édition verrouillée)
   try {
     const cdn = await tryCDN();
-    saveCdnReferenceRates(cdn);
+    const reference = mergeRates(cdn, []);
+    saveCdnReferenceRates(reference);
     if (!manualLocked) {
-      const merged = mergeRates(cdn, existing);
-      saveExchangeRates(merged);
+      saveExchangeRates(mergeRates(cdn, existing));
     }
     saveMeta('CDN');
-    return 'CDN';
+    return { source: 'CDN', reference };
   } catch {
     /* CDN indisponible → conserver le cache */
   }
 
-  // 3. Cache existant
-  if (existing.length > 0) {
-    const meta = getCachedMeta();
-    return meta?.source ?? 'cache';
-  }
-
-  // 4. Défaut codé en dur
-  return 'default';
+  return cachedReferenceOutcome();
 }
 
 /**
@@ -282,7 +306,7 @@ export async function smartFetchRates(): Promise<RatesSource> {
   if (!isCacheStale()) {
     return getCachedMeta()?.source ?? 'cache';
   }
-  return fetchAndSaveRates();
+  return (await fetchAndSaveRates()).source;
 }
 
 /** Millisecondes avant le prochain 09:00 local. */
