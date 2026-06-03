@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { PageHero } from '@/components/PageHero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RefreshCw, CheckCircle, AlertTriangle, Clock, FileText, FileDown, Lock, CheckCheck, Info } from 'lucide-react';
@@ -19,6 +19,9 @@ import { generateRapportPDF } from '@/lib/rapportPDF';
 import type { DailyClosure } from '@/types';
 import { ClosureChecklist } from '@/components/ClosureChecklist';
 import { fmt } from '@/lib/formatNumbers';
+import { getAllSnapshots, upsertSnapshot } from '@/lib/stageCaisse/storage';
+import { calculStock } from '@/lib/calculations';
+import { getExchangeRates } from '@/lib/storage';
 
 dayjs.locale('fr');
 
@@ -55,7 +58,28 @@ export function Cloture() {
   const [sigState, setSigState]         = useState<SigState>({ value: null, nom: '', isReady: false });
   const [toast, setToast]               = useState<{ ok: boolean; msg: string } | null>(null);
 
-  const showToast = (ok: boolean, msg: string) => {
+  // Stock devises réel saisi par le caissier à la clôture
+  const DEVISES = ['EUR', 'USD', 'GBP', 'CAD', 'SAR', 'AED', 'CHF', 'KWD'] as const;
+  const [realDevises, setRealDevises] = useState<Record<string, string>>({});
+
+  // Stock théorique depuis calculStock
+  const stockTheorique = useMemo(() => {
+    const txs = getTransactions();
+    const rates = getExchangeRates();
+    return calculStock(txs, rates);
+  }, []);
+
+  // Charger les valeurs réelles déjà saisies (snapshot CLOTURE)
+  useEffect(() => {
+    const snaps = getAllSnapshots();
+    const init: Record<string, string> = {};
+    for (const s of snaps) {
+      if (s.type_solde === 'CLOTURE' && s.date_comptable === today && s.devise_code !== 'MAD') {
+        init[s.devise_code] = String(s.montant);
+      }
+    }
+    setRealDevises(init);
+  }, []);
     setToast({ ok, msg });
     setTimeout(() => setToast(null), 4000);
   };
@@ -262,7 +286,76 @@ export function Cloture() {
 
         <ClosureChecklist date={today} />
 
-        {/* ── Grille principale ── */}
+        {/* ── Tableau stock devises ── */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-bold flex items-center gap-2">
+              💱 Stock devises — Comptage physique
+            </CardTitle>
+            <p className="text-xs text-zinc-500 mt-1">Saisissez le stock réel compté pour chaque devise, puis comparez avec le théorique système.</p>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-zinc-200 bg-zinc-50">
+                    <th className="px-3 py-2 text-left text-xs font-bold uppercase text-zinc-500">Devise</th>
+                    <th className="px-3 py-2 text-right text-xs font-bold uppercase text-zinc-500">Stock système</th>
+                    <th className="px-3 py-2 text-center text-xs font-bold uppercase text-emerald-600">Stock réel compté</th>
+                    <th className="px-3 py-2 text-right text-xs font-bold uppercase text-zinc-500">Écart</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {DEVISES.map((devise) => {
+                    const theorique = stockTheorique.find((s) => s.devise === devise)?.stockActuel ?? 0;
+                    const rawReal = realDevises[devise] ?? '';
+                    const reel = rawReal !== '' ? parseFloat(rawReal) : null;
+                    const ecart = reel !== null ? reel - theorique : null;
+                    const isOk = ecart !== null && Math.abs(ecart) < 0.01;
+                    const isKo = ecart !== null && Math.abs(ecart) >= 0.01;
+                    return (
+                      <tr key={devise} className="border-b border-zinc-100 hover:bg-zinc-50/50">
+                        <td className="px-3 py-2.5">
+                          <span className="font-mono font-bold text-zinc-700">{devise}</span>
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono tabular-nums text-zinc-700">
+                          {theorique > 0 ? theorique.toLocaleString('fr-MA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={rawReal}
+                            disabled={isValidated}
+                            placeholder="—"
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setRealDevises((prev) => ({ ...prev, [devise]: val }));
+                              const n = parseFloat(val);
+                              if (Number.isFinite(n)) {
+                                upsertSnapshot(1, today, 'CLOTURE', devise, n);
+                              }
+                            }}
+                            className={`w-full rounded border-2 px-2 py-1 text-center font-mono text-sm tabular-nums outline-none transition-all
+                              ${isOk ? 'border-emerald-400 bg-emerald-50' : isKo ? 'border-red-400 bg-red-50' : 'border-zinc-200 bg-zinc-50'}
+                              focus:border-emerald-400 focus:bg-white focus:ring-1 focus:ring-emerald-200
+                              disabled:bg-zinc-100 disabled:text-zinc-400`}
+                          />
+                        </td>
+                        <td className={`px-3 py-2.5 text-right font-mono font-bold tabular-nums ${isOk ? 'text-emerald-600' : isKo ? 'text-red-600' : 'text-zinc-400'}`}>
+                          {ecart === null ? '—' : `${ecart >= 0 ? '+' : ''}${ecart.toLocaleString('fr-MA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                          {isOk && <span className="ml-1 text-xs">✅</span>}
+                          {isKo && <span className="ml-1 text-xs">⚠️</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-3 text-[11px] text-zinc-400">Les valeurs saisies sont automatiquement sauvegardées comme snapshot CLÔTURE.</p>
+          </CardContent>
+        </Card>
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
 
           {/* === SOLDES === */}
