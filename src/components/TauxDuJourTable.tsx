@@ -1,62 +1,130 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import { Eye, Pencil, RefreshCw } from 'lucide-react';
-import { getExchangeRates, saveExchangeRates } from '@/lib/storage';
-import { repairAllRatesSpread, type RatesMeta, type RatesSource } from '@/lib/bkamRates';
+import { getBKAMRates, getExchangeRates, saveExchangeRates } from '@/lib/storage';
+import {
+  isExchangeRatesManualLock,
+  repairAllRatesSpread,
+  setExchangeRatesManualLock,
+  type RatesMeta,
+  type RatesSource,
+} from '@/lib/bkamRates';
 import type { useNotify } from '@/hooks/useNotify';
 
 const DEVISES_ORDER = ['EUR', 'USD', 'GBP', 'CAD', 'SAR', 'AED', 'CHF', 'KWD'] as const;
 
 const DEVISE_LABELS: Record<string, string> = {
-  EUR: 'Euro', USD: 'Dollar U.S.A.', GBP: 'Livre Sterling', CAD: 'Dollar Canadien',
-  SAR: 'Riyal Saoudien', AED: 'Dirham E.A.U.', CHF: 'Franc Suisse', KWD: 'Dinar Koweïtien',
+  EUR: 'Euro',
+  USD: 'Dollar U.S.A.',
+  GBP: 'Livre Sterling',
+  CAD: 'Dollar Canadien',
+  SAR: 'Riyal Saoudien',
+  AED: 'Dirham E.A.U.',
+  CHF: 'Franc Suisse',
+  KWD: 'Dinar Koweïtien',
 };
 
 const SAVED_DATE_KEY = 'exchangeRatesSavedDate';
 
-interface RateRow { devise: string; label: string; tauxAchat: number; tauxVente: number; }
+interface RateRow {
+  devise: string;
+  label: string;
+  tauxAchat: number;
+  tauxVente: number;
+}
+
 type EditState = Record<string, { achat: string; vente: string }>;
 
 function hasFlatSpread(rows: RateRow[]): boolean {
   return rows.some((r) => r.tauxAchat > 0 && Math.abs(r.tauxVente - r.tauxAchat) < 0.01);
 }
+
 function fmtRate(n: number): string {
   if (n <= 0) return '—';
   return new Intl.NumberFormat('fr-MA', { minimumFractionDigits: 4, maximumFractionDigits: 5 }).format(n);
 }
-function getLastSavedDate(): string | null { return localStorage.getItem(SAVED_DATE_KEY); }
-function setLastSavedDate(isoString: string): void { localStorage.setItem(SAVED_DATE_KEY, isoString); }
 
+function getLastSavedDate(): string | null {
+  return localStorage.getItem(SAVED_DATE_KEY);
+}
+
+function setLastSavedDate(isoString: string): void {
+  localStorage.setItem(SAVED_DATE_KEY, isoString);
+}
+
+/** Taux opérationnels (saisie manuelle / bureau). */
 function loadRows(): RateRow[] {
   let rates = getExchangeRates();
   const snapshot = DEVISES_ORDER.map((devise) => {
     const r = rates.find((x) => x.devise === devise);
-    return { devise, label: DEVISE_LABELS[devise] ?? devise, tauxAchat: r?.tauxAchat ?? 0, tauxVente: r?.tauxVente ?? 0 };
+    return {
+      devise,
+      label: DEVISE_LABELS[devise] ?? devise,
+      tauxAchat: r?.tauxAchat ?? 0,
+      tauxVente: r?.tauxVente ?? 0,
+    };
   });
-  if (hasFlatSpread(snapshot)) rates = repairAllRatesSpread();
+  if (hasFlatSpread(snapshot) && !isExchangeRatesManualLock()) rates = repairAllRatesSpread();
   return DEVISES_ORDER.map((devise) => {
     const r = rates.find((x) => x.devise === devise);
-    return { devise, label: DEVISE_LABELS[devise] ?? devise, tauxAchat: r?.tauxAchat ?? 0, tauxVente: r?.tauxVente ?? 0 };
+    return {
+      devise,
+      label: DEVISE_LABELS[devise] ?? devise,
+      tauxAchat: r?.tauxAchat ?? 0,
+      tauxVente: r?.tauxVente ?? 0,
+    };
+  });
+}
+
+/** Référence BKAM (lecture seule) — ne pas confondre avec l’édition manuelle. */
+function loadBkamDisplayRows(): RateRow[] {
+  const bkam = getBKAMRates();
+  const rates = bkam.length > 0 ? bkam : getExchangeRates();
+  return DEVISES_ORDER.map((devise) => {
+    const r = rates.find((x) => x.devise === devise);
+    return {
+      devise,
+      label: DEVISE_LABELS[devise] ?? devise,
+      tauxAchat: r?.tauxAchat ?? 0,
+      tauxVente: r?.tauxVente ?? 0,
+    };
   });
 }
 
 function rowsToEditState(rows: RateRow[]): EditState {
   return Object.fromEntries(
-    rows.map((r) => [r.devise, { achat: r.tauxAchat > 0 ? String(r.tauxAchat) : '', vente: r.tauxVente > 0 ? String(r.tauxVente) : '' }]),
+    rows.map((r) => [
+      r.devise,
+      { achat: r.tauxAchat > 0 ? String(r.tauxAchat) : '', vente: r.tauxVente > 0 ? String(r.tauxVente) : '' },
+    ]),
   );
 }
 
 export function TauxDuJourTable({
-  meta, loading, onRefresh, notify,
+  meta,
+  loading,
+  onRefresh,
+  notify,
 }: {
-  meta: RatesMeta | null; loading: boolean; onRefresh: () => Promise<RatesSource>; notify: ReturnType<typeof useNotify>;
+  meta: RatesMeta | null;
+  loading: boolean;
+  onRefresh: (options?: { force?: boolean }) => Promise<RatesSource>;
+  notify: ReturnType<typeof useNotify>;
 }) {
   const [rows, setRows] = useState<RateRow[]>(() => loadRows());
+  const [displayRows, setDisplayRows] = useState<RateRow[]>(() => loadBkamDisplayRows());
   const [editState, setEditState] = useState<EditState>(() => rowsToEditState(loadRows()));
   const [lastSaved, setLastSaved] = useState<string | null>(() => getLastSavedDate());
+  const skipReloadRef = useRef(false);
 
   useEffect(() => {
-    function reload() { const r = loadRows(); setRows(r); setEditState(rowsToEditState(r)); }
+    function reload() {
+      if (skipReloadRef.current) return;
+      const r = loadRows();
+      setRows(r);
+      setDisplayRows(loadBkamDisplayRows());
+      setEditState(rowsToEditState(r));
+    }
     reload();
     window.addEventListener('afromoney-data', reload);
     return () => window.removeEventListener('afromoney-data', reload);
@@ -65,69 +133,113 @@ export function TauxDuJourTable({
   async function handleRefresh() {
     const src = await onRefresh();
     if (src === 'BKAM') notify.success('Taux Bank Al-Maghrib chargés.', 'Taux du jour');
-    else if (src === 'CDN') { repairAllRatesSpread(); notify.info('Taux CDN + marge bureau appliqués.', 'Taux du jour'); }
-    else notify.warning('BKAM inaccessible — cache ou saisie manuelle.', 'Taux du jour');
+    else if (src === 'CDN') {
+      repairAllRatesSpread();
+      notify.info('Taux CDN + marge bureau appliqués.', 'Taux du jour');
+    } else notify.warning('BKAM inaccessible — cache ou saisie manuelle.', 'Taux du jour');
   }
 
   function setField(devise: string, field: 'achat' | 'vente', value: string) {
     setEditState((prev) => ({ ...prev, [devise]: { ...prev[devise], [field]: value } }));
   }
 
-  // ── Sauvegarde d'une seule devise (appelée sur Entrée) ──
-  function saveDevise(devise: string) {
+  function parseInputRate(s: string): number | null {
+    const n = parseFloat(s.trim().replace(',', '.'));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+
+  /** Enregistre une devise (Entrée, Tab ou sortie du champ) — n’écrase pas la réf. BKAM. */
+  function commitDeviseRow(devise: string, quiet = false): boolean {
     const raw = editState[devise];
-    if (!raw) return;
-    const achat = parseFloat(raw.achat.replace(',', '.'));
-    const vente = parseFloat(raw.vente.replace(',', '.'));
-    if (!Number.isFinite(achat) || achat <= 0 || !Number.isFinite(vente) || vente <= 0) {
-      notify.warning(`${devise} : saisissez achat et vente valides`, 'Taux');
-      return;
+    const base = rows.find((r) => r.devise === devise);
+    if (!raw || !base) return false;
+
+    const achat = parseInputRate(raw.achat) ?? base.tauxAchat;
+    const vente = parseInputRate(raw.vente) ?? base.tauxVente;
+    if (achat <= 0 || vente <= 0) return false;
+    if (vente <= achat) {
+      if (!quiet) notify.error(`${devise} : la vente doit être > l'achat`, 'Taux invalides');
+      return false;
     }
-    if (vente <= achat) { notify.error(`${devise} : vente doit être > achat`, 'Taux invalides'); return; }
+
+    const unchanged =
+      Math.abs(achat - base.tauxAchat) < 0.0001 && Math.abs(vente - base.tauxVente) < 0.0001;
+    if (unchanged) return true;
+
     const now = new Date().toISOString();
-    const dateUpdate = new Date();
     const tauxJour = parseFloat(((achat + vente) / 2).toFixed(5));
+    const dateUpdate = new Date();
     const all = getExchangeRates();
     const updated = [...all];
     const row = { devise, tauxAchat: achat, tauxVente: vente, tauxJour, dateUpdate };
     const idx = updated.findIndex((r) => r.devise === devise);
     if (idx >= 0) updated[idx] = { ...updated[idx], ...row };
     else updated.push(row);
+
+    skipReloadRef.current = true;
     saveExchangeRates(updated);
+    setExchangeRatesManualLock(true);
     setLastSavedDate(now);
     setLastSaved(now);
+
     const r = loadRows();
     setRows(r);
-    notify.success(`${devise} sauvegardé ✅`, 'Taux');
+    setEditState((prev) => ({
+      ...prev,
+      [devise]: {
+        achat: String(achat),
+        vente: String(vente),
+      },
+    }));
+    skipReloadRef.current = false;
+
+    if (!quiet) notify.success(`${devise} enregistré`, 'Édition manuelle');
+    return true;
   }
 
-  // ── Sauvegarde de toutes les devises (bouton vert) ──
+  function handleFieldCommit(devise: string, showToast = false) {
+    commitDeviseRow(devise, !showToast);
+  }
+
   function handleSave() {
     const now = new Date().toISOString();
+
     const all = getExchangeRates();
     const errors: string[] = [];
     const dateUpdate = new Date();
     const updated = [...all];
+
     for (const devise of DEVISES_ORDER) {
       const raw = editState[devise];
       if (!raw) continue;
       const achat = parseFloat(raw.achat.replace(',', '.'));
       const vente = parseFloat(raw.vente.replace(',', '.'));
       if (!Number.isFinite(achat) || achat <= 0 || !Number.isFinite(vente) || vente <= 0) continue;
-      if (vente <= achat) { errors.push(`${devise} : vente ≤ achat`); continue; }
+      if (vente <= achat) {
+        errors.push(`${devise} : vente ≤ achat`);
+        continue;
+      }
       const tauxJour = parseFloat(((achat + vente) / 2).toFixed(5));
       const row = { devise, tauxAchat: achat, tauxVente: vente, tauxJour, dateUpdate };
       const idx = updated.findIndex((r) => r.devise === devise);
       if (idx >= 0) updated[idx] = { ...updated[idx], ...row };
       else updated.push(row);
     }
-    if (errors.length > 0) { notify.error(`Erreur : ${errors.join(' / ')}`, 'Taux invalides'); return; }
+
+    if (errors.length > 0) {
+      notify.error(`Erreur : ${errors.join(' / ')}`, 'Taux invalides');
+      return;
+    }
+
+    skipReloadRef.current = true;
     saveExchangeRates(updated);
+    setExchangeRatesManualLock(true);
     setLastSavedDate(now);
     setLastSaved(now);
     const r = loadRows();
     setRows(r);
     setEditState(rowsToEditState(r));
+    skipReloadRef.current = false;
     notify.success(`Taux sauvegardés à ${dayjs(now).format('HH:mm')}`, 'Édition manuelle');
   }
 
@@ -138,9 +250,13 @@ export function TauxDuJourTable({
   const flatSpread = hasFlatSpread(rows);
 
   const syncLabel = meta
-    ? isBKAM ? `BKAM · ${dayjs(meta.fetchedAt).format('HH:mm')}`
-    : isCDN  ? `CDN · ${dayjs(meta.fetchedAt).format('HH:mm')}`
-    : isCache ? `Cache · ${dayjs(meta.fetchedAt).format('HH:mm')}` : 'Défaut'
+    ? isBKAM
+      ? `BKAM · ${dayjs(meta.fetchedAt).format('HH:mm')}`
+      : isCDN
+        ? `CDN · ${dayjs(meta.fetchedAt).format('HH:mm')}`
+        : isCache
+          ? `Cache · ${dayjs(meta.fetchedAt).format('HH:mm')}`
+          : 'Défaut'
     : 'Non sync.';
 
   const savedFullLabel = lastSaved ? dayjs(lastSaved).format('DD/MM/YYYY [à] HH:mm') : null;
@@ -151,18 +267,33 @@ export function TauxDuJourTable({
         <div className="space-y-1">
           {isApprox && (
             <div className="flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-800">
-              <span>⚠️</span> BKAM indisponible — rafraîchir ou saisir manuellement.
+              <span>⚠️</span>
+              BKAM indisponible — rafraîchir ou saisir manuellement.
             </div>
           )}
           {isCache && !isApprox && (
             <div className="flex items-center gap-1.5 rounded border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] text-blue-800">
-              <span>ℹ️</span> Cache local.
+              <span>ℹ️</span>
+              Cache local.
             </div>
           )}
           {flatSpread && (
             <div className="flex items-center gap-1.5 rounded border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] text-red-800">
-              <span>❌</span> Achat = vente —{' '}
-              <button type="button" className="ml-0.5 font-bold underline" onClick={() => { repairAllRatesSpread(); window.dispatchEvent(new Event('afromoney-data')); notify.success('Écart corrigé.', 'Taux'); }}>
+              <span>❌</span>
+              Achat = vente —{' '}
+              <button
+                type="button"
+                className="ml-0.5 font-bold underline"
+                onClick={() => {
+                  if (isExchangeRatesManualLock()) {
+                    notify.warning('Taux verrouillés — sauvegarde manuelle active.', 'Taux');
+                    return;
+                  }
+                  repairAllRatesSpread();
+                  window.dispatchEvent(new Event('afromoney-data'));
+                  notify.success('Écart corrigé.', 'Taux');
+                }}
+              >
                 Corriger
               </button>
             </div>
@@ -179,11 +310,17 @@ export function TauxDuJourTable({
               <span className="text-[12px] font-semibold text-zinc-600">Affichage</span>
               <span className="text-[11px] text-zinc-400">· {syncLabel}</span>
             </div>
-            <button type="button" onClick={handleRefresh} disabled={loading} className="flex items-center gap-1 rounded border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50">
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="flex items-center gap-1 rounded border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 hover:bg-zinc-100 disabled:opacity-50"
+            >
               <RefreshCw size={10} className={loading ? 'animate-spin' : ''} />
               {loading ? 'Synchro…' : 'Rafraîchir'}
             </button>
           </div>
+
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50">
@@ -193,21 +330,33 @@ export function TauxDuJourTable({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {displayRows.map((row) => (
                 <tr key={row.devise} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-100/50">
                   <td className="px-2 py-[5px]">
                     <span className="font-mono text-[11px] font-bold text-zinc-500">{row.devise}</span>
                     <span className="ml-1.5 text-[11px] text-zinc-500">{row.label}</span>
                   </td>
-                  <td className="px-2 py-[5px] text-right font-mono text-[13px] tabular-nums text-zinc-800">{fmtRate(row.tauxAchat)}</td>
-                  <td className="px-2 py-[5px] text-right font-mono text-[13px] tabular-nums text-zinc-800">{fmtRate(row.tauxVente)}</td>
+                  <td className="px-2 py-[5px] text-right font-mono text-[13px] tabular-nums text-zinc-800">
+                    {fmtRate(row.tauxAchat)}
+                  </td>
+                  <td className="px-2 py-[5px] text-right font-mono text-[13px] tabular-nums text-zinc-800">
+                    {fmtRate(row.tauxVente)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+
           <div className="border-t border-zinc-200 px-3 py-1 text-[10px] text-zinc-400">
             MAD/unité · Vente &gt; Achat ·{' '}
-            <a href="https://www.bkam.ma/Marche-des-changes/Taux-de-change" target="_blank" rel="noopener noreferrer" className="underline">Réf. BKAM</a>
+            <a
+              href="https://www.bkam.ma/Marche-des-changes/Taux-de-change"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline"
+            >
+              Réf. BKAM
+            </a>
           </div>
         </div>
 
@@ -217,10 +366,13 @@ export function TauxDuJourTable({
             <div className="flex items-center gap-1.5">
               <Pencil size={13} className="text-zinc-400" />
               <span className="text-[12px] font-semibold text-zinc-600">Édition manuelle</span>
-              <span className="text-[11px] text-emerald-600 font-medium">— Entrée pour sauvegarder ligne par ligne</span>
+              <span className="text-[10px] text-emerald-700">— Entrée ou Tab pour enregistrer la ligne</span>
             </div>
-            {savedFullLabel && <span className="text-[10px] text-zinc-400">Sauvegardé : {savedFullLabel}</span>}
+            {savedFullLabel && (
+              <span className="text-[10px] text-zinc-400">Sauvegardé : {savedFullLabel}</span>
+            )}
           </div>
+
           <table className="w-full border-collapse text-[13px]">
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50">
@@ -241,16 +393,14 @@ export function TauxDuJourTable({
                       inputMode="decimal"
                       value={editState[devise]?.achat ?? ''}
                       onChange={(e) => setField(devise, 'achat', e.target.value)}
+                      onBlur={() => handleFieldCommit(devise, false)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          const next = document.querySelector<HTMLInputElement>(`[data-devise="${devise}"][data-field="vente"]`);
-                          next?.focus();
+                          handleFieldCommit(devise, true);
+                          (e.target as HTMLInputElement).blur();
                         }
                       }}
-                      data-devise={devise}
-                      data-field="achat"
-                      placeholder={fmtRate(rows.find((r) => r.devise === devise)?.tauxAchat ?? 0)}
                       className="w-full rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-center font-mono text-[12px] tabular-nums focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-300"
                     />
                   </td>
@@ -260,23 +410,14 @@ export function TauxDuJourTable({
                       inputMode="decimal"
                       value={editState[devise]?.vente ?? ''}
                       onChange={(e) => setField(devise, 'vente', e.target.value)}
+                      onBlur={() => handleFieldCommit(devise, false)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          saveDevise(devise);
-                          const idx = DEVISES_ORDER.indexOf(devise);
-                          const nextDevise = DEVISES_ORDER[idx + 1];
-                          if (nextDevise) {
-                            setTimeout(() => {
-                              const next = document.querySelector<HTMLInputElement>(`[data-devise="${nextDevise}"][data-field="achat"]`);
-                              next?.focus();
-                            }, 50);
-                          }
+                          handleFieldCommit(devise, true);
+                          (e.target as HTMLInputElement).blur();
                         }
                       }}
-                      data-devise={devise}
-                      data-field="vente"
-                      placeholder={fmtRate(rows.find((r) => r.devise === devise)?.tauxVente ?? 0)}
                       className="w-full rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-center font-mono text-[12px] tabular-nums focus:border-emerald-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-emerald-300"
                     />
                   </td>
@@ -284,14 +425,27 @@ export function TauxDuJourTable({
               ))}
             </tbody>
           </table>
+
           <div className="space-y-2 border-t border-zinc-200 px-3 py-2">
             {lastSaved && (
               <p className="text-[11px] text-zinc-500">
-                Dernière sauvegarde : <span className="font-medium text-zinc-700">{savedFullLabel}</span> — vous pouvez modifier et sauvegarder à nouveau.
+                Dernière sauvegarde :{' '}
+                <span className="font-medium text-zinc-700">{savedFullLabel}</span>
+                {' '}— vous pouvez modifier et sauvegarder à nouveau.
+                {isExchangeRatesManualLock() && (
+                  <span className="mt-1 block font-medium text-emerald-700">
+                    Taux verrouillés : BKAM/CDN ne les remplacera pas automatiquement.
+                  </span>
+                )}
               </p>
             )}
-            <button type="button" onClick={handleSave} className="w-full rounded bg-emerald-600 py-1.5 text-[13px] font-bold text-white transition hover:bg-emerald-700 active:bg-emerald-800">
-              ✅ Sauvegarder tous les taux
+
+            <button
+              type="button"
+              onClick={handleSave}
+              className="w-full rounded bg-emerald-600 py-1.5 text-[13px] font-bold text-white transition hover:bg-emerald-700 active:bg-emerald-800"
+            >
+              Sauvegarder les taux
             </button>
           </div>
         </div>
