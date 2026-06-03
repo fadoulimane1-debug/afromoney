@@ -37,8 +37,8 @@ export function RatesBadge({ compact = false, className }: RatesBadgeProps) {
   const cfg = SOURCE_CFG[source];
 
   async function handleRefresh() {
-    const src = await refresh();
-    const label = SOURCE_CFG[src].label;
+    const { source: src } = await refresh({ force: true });
+const label = SOURCE_CFG[src].label;
     if (src === 'BKAM' || src === 'CDN') {
       notify.success(`Taux actualisés depuis ${label}.`, 'Taux du jour');
     } else {
