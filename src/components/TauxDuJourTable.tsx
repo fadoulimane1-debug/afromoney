@@ -76,12 +76,11 @@ function loadRows(): RateRow[] {
   });
 }
 
-/** Référence BKAM (lecture seule) — ne pas confondre avec l’édition manuelle. */
+/** Référence BKAM officielle uniquement — jamais les taux bureau (exchangeRates). */
 function loadBkamDisplayRows(): RateRow[] {
   const bkam = getBKAMRates();
-  const rates = bkam.length > 0 ? bkam : getExchangeRates();
   return DEVISES_ORDER.map((devise) => {
-    const r = rates.find((x) => x.devise === devise);
+    const r = bkam.find((x) => x.devise === devise);
     return {
       devise,
       label: DEVISE_LABELS[devise] ?? devise,
@@ -89,6 +88,10 @@ function loadBkamDisplayRows(): RateRow[] {
       tauxVente: r?.tauxVente ?? 0,
     };
   });
+}
+
+function hasBkamReference(): boolean {
+  return getBKAMRates().some((r) => r.tauxAchat > 0 && r.tauxVente > 0);
 }
 
 function rowsToEditState(rows: RateRow[]): EditState {
@@ -118,25 +121,38 @@ export function TauxDuJourTable({
   const skipReloadRef = useRef(false);
 
   useEffect(() => {
-    function reload() {
+    function reloadManual() {
       if (skipReloadRef.current) return;
       const r = loadRows();
       setRows(r);
-      setDisplayRows(loadBkamDisplayRows());
       setEditState(rowsToEditState(r));
     }
-    reload();
-    window.addEventListener('afromoney-data', reload);
-    return () => window.removeEventListener('afromoney-data', reload);
+    function reloadBkamOnly() {
+      setDisplayRows(loadBkamDisplayRows());
+    }
+    reloadManual();
+    reloadBkamOnly();
+    window.addEventListener('afromoney-data', reloadManual);
+    window.addEventListener('afromoney-bkam-rates', reloadBkamOnly);
+    return () => {
+      window.removeEventListener('afromoney-data', reloadManual);
+      window.removeEventListener('afromoney-bkam-rates', reloadBkamOnly);
+    };
   }, []);
 
   async function handleRefresh() {
-    const src = await onRefresh();
-    if (src === 'BKAM') notify.success('Taux Bank Al-Maghrib chargés.', 'Taux du jour');
+    const src = await onRefresh({ force: isExchangeRatesManualLock() });
+    setDisplayRows(loadBkamDisplayRows());
+    if (!isExchangeRatesManualLock()) {
+      const r = loadRows();
+      setRows(r);
+      setEditState(rowsToEditState(r));
+    }
+    if (src === 'BKAM') notify.success('Référence BKAM mise à jour (panneau Affichage).', 'Taux du jour');
     else if (src === 'CDN') {
-      repairAllRatesSpread();
-      notify.info('Taux CDN + marge bureau appliqués.', 'Taux du jour');
-    } else notify.warning('BKAM inaccessible — cache ou saisie manuelle.', 'Taux du jour');
+      if (!isExchangeRatesManualLock()) repairAllRatesSpread();
+      notify.info('CDN appliqué à l’édition bureau uniquement.', 'Taux du jour');
+    } else notify.warning('BKAM inaccessible — édition manuelle inchangée.', 'Taux du jour');
   }
 
   function setField(devise: string, field: 'achat' | 'vente', value: string) {
@@ -307,7 +323,7 @@ export function TauxDuJourTable({
           <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-100 px-3 py-1.5">
             <div className="flex items-center gap-1.5">
               <Eye size={13} className="text-zinc-400" />
-              <span className="text-[12px] font-semibold text-zinc-600">Affichage</span>
+              <span className="text-[12px] font-semibold text-zinc-600">Affichage BKAM</span>
               <span className="text-[11px] text-zinc-400">· {syncLabel}</span>
             </div>
             <button
@@ -348,14 +364,21 @@ export function TauxDuJourTable({
           </table>
 
           <div className="border-t border-zinc-200 px-3 py-1 text-[10px] text-zinc-400">
-            MAD/unité · Vente &gt; Achat ·{' '}
+            {hasBkamReference() ? (
+              <span>Référence BKAM officielle — indépendante de l’édition manuelle (bureau).</span>
+            ) : (
+              <span className="text-amber-700">
+                Pas encore de réf. BKAM — cliquez <strong>Rafraîchir</strong> (les taux bureau restent à droite).
+              </span>
+            )}
+            {' · '}
             <a
               href="https://www.bkam.ma/Marche-des-changes/Taux-de-change"
               target="_blank"
               rel="noopener noreferrer"
               className="underline"
             >
-              Réf. BKAM
+              bkam.ma
             </a>
           </div>
         </div>
@@ -365,8 +388,8 @@ export function TauxDuJourTable({
           <div className="flex items-center justify-between border-b border-zinc-200 bg-zinc-50 px-3 py-1.5">
             <div className="flex items-center gap-1.5">
               <Pencil size={13} className="text-zinc-400" />
-              <span className="text-[12px] font-semibold text-zinc-600">Édition manuelle</span>
-              <span className="text-[10px] text-emerald-700">— Entrée ou Tab pour enregistrer la ligne</span>
+              <span className="text-[12px] font-semibold text-zinc-600">Édition manuelle (bureau)</span>
+              <span className="text-[10px] text-emerald-700">— Tab/Entrée · n’affecte pas BKAM</span>
             </div>
             {savedFullLabel && (
               <span className="text-[10px] text-zinc-400">Sauvegardé : {savedFullLabel}</span>
