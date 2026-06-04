@@ -6,6 +6,7 @@
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
 import type { DailyClosure, Transaction, TransactionType } from '@/types';
+import { montantMadComptable } from '@/lib/calculations';
 import { isSignatureImage } from '@/components/SignaturePad';
 import {
   C,
@@ -133,8 +134,10 @@ function evolutionPoints(closure: DailyClosure, txDay: Transaction[]): number[] 
   for (const t of sorted) {
     if (t.type === 'ACHAT') balance -= t.montantMAD;
     else if (t.type === 'VENTE') balance += t.montantMAD;
-    else if (t.type === 'DEPOT') balance += t.montantMAD;
-    else if (t.type === 'RETRAIT' || t.type === 'CHARGES') balance -= t.montantMAD;
+    else if (t.type === 'DEPOT') balance += montantMadComptable(t);
+    else if (t.type === 'RETRAIT' || t.type === 'CHARGES') {
+      balance -= t.type === 'CHARGES' ? t.montantMAD : montantMadComptable(t);
+    }
     pts.push(balance);
   }
   pts.push(closure.theoreticalBalance);
