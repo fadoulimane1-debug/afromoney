@@ -21,6 +21,7 @@ import { creditsForCaisseJour, settleCredit, type Credit } from '@/lib/credits';
 import { getReliquats } from '@/lib/storage';
 import type { Transaction, TransactionType, Reliquat } from '@/types';
 import { fmt, fmtRate } from '@/lib/formatNumbers';
+import { montantMadComptable } from '@/lib/calculations';
 
 dayjs.locale('fr');
 
@@ -434,7 +435,7 @@ export function CaisseJour() {
           {/* Sections opérations */}
           {SECTIONS.map(({ type, title, borderClass, headerClass, kind }) => {
             const rows = rowsForType(type);
-            const total = rows.reduce((s, t) => s + t.montantMAD, 0);
+            const total = rows.reduce((s, t) => s + montantMadComptable(t), 0);
             return (
               <section
                 key={type}
