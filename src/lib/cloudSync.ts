@@ -77,6 +77,9 @@ export async function pullAllFromCloud(): Promise<void> {
     apiGetExchangeRates().catch(() => ({ rates: [] as ExchangeRate[] })),
   ]);
 
+  // Ne pas écraser le localStorage si le cloud est vide
+  if (apiTxs.length === 0 && apiClosures.length === 0) return;
+
   const transactions = apiTxs.map(apiToTransaction);
   localStorage.setItem('transactions', JSON.stringify(transactions));
 
