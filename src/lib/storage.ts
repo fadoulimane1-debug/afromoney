@@ -8,7 +8,7 @@ import { generateHash } from '@/lib/audit';
 import { UTILISATEURS_TEST } from '@/lib/constants';
 import { filterTransactionsComptables } from '@/lib/transactionFilters';
 import { fmtMad } from '@/lib/formatNumbers';
-import { calculRapportMensuel } from '@/lib/calculations';
+import { calculRapportMensuel, depotRetraitMadCaisseActif, montantMadComptable } from '@/lib/calculations';
 import { isCloudSyncEnabled } from '@/lib/cloudConfig';
 import {
   cloudCreateTransaction,
@@ -87,6 +87,8 @@ export const updateTransaction = (id: string, updates: Partial<Transaction>): vo
   saveTransactions(
     getTransactions().map((t) => (t.id === id ? { ...t, ...updates } : t))
   );
+  const next = getTransactions().find((t) => t.id === id);
+  if (prev && next) syncDepotRetraitMadMouvement(prev, next);
   if (isCloudSyncEnabled()) void cloudUpdateTransaction(id, updates);
   if (prev) {
     logAudit(
@@ -335,15 +337,14 @@ export const calculateDailyClosure = (date: string): DailyClosure => {
       .filter((t) => t.type === type)
       .reduce((acc, t) => acc + (t.montantMAD ?? 0), 0);
 
-  const sumMADOnly = (type: string) =>
-    dayTransactions
-      .filter((t) => t.type === type && t.devise === 'MAD')
-      .reduce((acc, t) => acc + (t.montant ?? 0), 0);
-
   const totalBuys        = sum('ACHAT');
   const totalSells       = sum('VENTE');
-  const totalDeposits    = sumMADOnly('DEPOT');
-  const totalWithdrawals = sumMADOnly('RETRAIT');
+  const totalDeposits = dayTransactions
+    .filter((t) => t.type === 'DEPOT')
+    .reduce((acc, t) => acc + montantMadComptable(t), 0);
+  const totalWithdrawals = dayTransactions
+    .filter((t) => t.type === 'RETRAIT')
+    .reduce((acc, t) => acc + montantMadComptable(t), 0);
   const totalCharges     = sum('CHARGES');
 
   const prevValidated = getLastValidatedClosureBefore(date);
@@ -683,6 +684,70 @@ function appendMouvement(
   return newMv;
 }
 
+function madMouvementsForTransaction(txId: string): MouvementCaisse[] {
+  return getMouvements().filter(
+    (m) =>
+      m.operationRef === txId &&
+      m.devise === 'MAD' &&
+      (m.type === 'DEPOT' || m.type === 'RETRAIT'),
+  );
+}
+
+function removeMadMouvementsForTransaction(txId: string): void {
+  const legs = madMouvementsForTransaction(txId);
+  if (legs.length === 0) return;
+  const drop = new Set(legs.map((l) => l.id));
+  saveMouvements(getMouvements().filter((m) => !drop.has(m.id)));
+}
+
+/** Jambe MAD d'un DÉPÔT / RETRAIT (uniquement si statut PAYÉ). */
+function appendDepotRetraitMadLeg(tx: Transaction): void {
+  if (!depotRetraitMadCaisseActif(tx)) return;
+  const ts = new Date().toISOString();
+  const caissier = getCurrentUser()?.nom ?? 'Système';
+  const ref = tx.id;
+  const operationNumero = tx.numero;
+  const note = tx.note || undefined;
+  const mad = tx.devise === 'MAD' ? tx.montant : tx.montantMAD;
+  if (tx.type === 'DEPOT') {
+    appendMouvement({
+      timestamp: ts,
+      type: 'DEPOT',
+      devise: 'MAD',
+      montant: mad,
+      operationRef: ref,
+      operationNumero,
+      caissier,
+      note,
+    });
+  } else if (tx.type === 'RETRAIT') {
+    appendMouvement({
+      timestamp: ts,
+      type: 'RETRAIT',
+      devise: 'MAD',
+      montant: -mad,
+      operationRef: ref,
+      operationNumero,
+      caissier,
+      note,
+    });
+  }
+}
+
+/** Quand le statut passe à PAYÉ (ou inverse), aligner le journal caisse MAD. */
+function syncDepotRetraitMadMouvement(prev: Transaction, next: Transaction): void {
+  if (next.type !== 'DEPOT' && next.type !== 'RETRAIT') return;
+  const was = depotRetraitMadCaisseActif(prev);
+  const now = depotRetraitMadCaisseActif(next);
+  if (was && now) {
+    removeMadMouvementsForTransaction(next.id);
+    appendDepotRetraitMadLeg(next);
+    return;
+  }
+  if (!was && now) appendDepotRetraitMadLeg(next);
+  if (was && !now) removeMadMouvementsForTransaction(next.id);
+}
+
 /** Crée les mouvements correspondant à une transaction. */
 function appendMouvementsTransaction(tx: Transaction): void {
   const ts = new Date().toISOString();
@@ -706,22 +771,18 @@ function appendMouvementsTransaction(tx: Transaction): void {
     }
     case 'DEPOT':
       if (tx.devise === 'MAD') {
-        appendMouvement({ timestamp: ts, type: 'DEPOT', devise: 'MAD', montant: tx.montant, operationRef: ref, operationNumero, caissier, note });
+        appendDepotRetraitMadLeg(tx);
       } else {
         appendMouvement({ timestamp: ts, type: 'DEPOT', devise: tx.devise, montant: tx.montant, operationRef: ref, operationNumero, caissier, note });
-        if (tx.taux !== 1 && tx.montantMAD > 0) {
-          appendMouvement({ timestamp: ts, type: 'DEPOT', devise: 'MAD', montant: tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
-        }
+        appendDepotRetraitMadLeg(tx);
       }
       break;
     case 'RETRAIT':
       if (tx.devise === 'MAD') {
-        appendMouvement({ timestamp: ts, type: 'RETRAIT', devise: 'MAD', montant: -tx.montant, operationRef: ref, operationNumero, caissier, note });
+        appendDepotRetraitMadLeg(tx);
       } else {
         appendMouvement({ timestamp: ts, type: 'RETRAIT', devise: tx.devise, montant: -tx.montant, operationRef: ref, operationNumero, caissier, note });
-        if (tx.taux !== 1 && tx.montantMAD > 0) {
-          appendMouvement({ timestamp: ts, type: 'RETRAIT', devise: 'MAD', montant: -tx.montantMAD, operationRef: ref, operationNumero, caissier, note });
-        }
+        appendDepotRetraitMadLeg(tx);
       }
       break;
     case 'CHARGES':
@@ -744,16 +805,26 @@ function appendMouvementsTransaction(tx: Transaction): void {
         }
         case 'DEPOT':
           if (origTx.devise === 'MAD') {
-            appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: -origTx.montant, operationRef: ref, operationNumero, caissier, note });
+            if (depotRetraitMadCaisseActif(origTx)) {
+              appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: -origTx.montant, operationRef: ref, operationNumero, caissier, note });
+            }
           } else {
             appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: origTx.devise, montant: -origTx.montant, operationRef: ref, operationNumero, caissier, note });
+            if (depotRetraitMadCaisseActif(origTx)) {
+              appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: -origTx.montantMAD, operationRef: ref, operationNumero, caissier, note });
+            }
           }
           break;
         case 'RETRAIT':
           if (origTx.devise === 'MAD') {
-            appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: origTx.montant, operationRef: ref, operationNumero, caissier, note });
+            if (depotRetraitMadCaisseActif(origTx)) {
+              appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: origTx.montant, operationRef: ref, operationNumero, caissier, note });
+            }
           } else {
             appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: origTx.devise, montant: origTx.montant, operationRef: ref, operationNumero, caissier, note });
+            if (depotRetraitMadCaisseActif(origTx)) {
+              appendMouvement({ timestamp: ts, type: 'ANNULATION', devise: 'MAD', montant: origTx.montantMAD, operationRef: ref, operationNumero, caissier, note });
+            }
           }
           break;
         case 'CHARGES':
