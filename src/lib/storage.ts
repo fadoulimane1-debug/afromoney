@@ -809,6 +809,23 @@ function appendMouvementReliquat(reliquat: Reliquat, versement: Versement): void
 }
 
 /** ALIMENTATION manuelle (responsable approvisionne la caisse). */
+/** Dépôt MAD manuel (ex. crédit soldé). */
+export const appendDepotCaisse = (params: {
+  montant: number;
+  operationRef?: string;
+  note?: string;
+  caissier?: string;
+}): MouvementCaisse =>
+  appendMouvement({
+    timestamp: new Date().toISOString(),
+    type: 'DEPOT',
+    devise: 'MAD',
+    montant: Math.abs(params.montant),
+    operationRef: params.operationRef,
+    caissier: params.caissier ?? getCurrentUser()?.nom ?? 'Système',
+    note: params.note,
+  });
+
 export const appendAlimentation = (params: {
   montant: number;
   devise?: string;
