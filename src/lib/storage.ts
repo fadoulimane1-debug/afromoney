@@ -808,7 +808,6 @@ function appendMouvementReliquat(reliquat: Reliquat, versement: Versement): void
   });
 }
 
-/** ALIMENTATION manuelle (responsable approvisionne la caisse). */
 /** Dépôt MAD manuel (ex. crédit soldé). */
 export const appendDepotCaisse = (params: {
   montant: number;
@@ -826,6 +825,7 @@ export const appendDepotCaisse = (params: {
     note: params.note,
   });
 
+/** ALIMENTATION manuelle (responsable approvisionne la caisse). */
 export const appendAlimentation = (params: {
   montant: number;
   devise?: string;
