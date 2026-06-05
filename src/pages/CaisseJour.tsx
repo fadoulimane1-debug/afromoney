@@ -3,7 +3,7 @@ import { PageHero } from '@/components/PageHero';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Plus, ArrowRight, TrendingUp, TrendingDown, CheckCircle, ExternalLink } from 'lucide-react';
+import { Calendar, Plus, ArrowRight, TrendingUp, TrendingDown, CheckCircle, ExternalLink, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -12,11 +12,11 @@ import {
 import { useAppData } from '@/hooks/useAppData';
 import { summarizeCaisseJourV8, recapDeviseJournee } from '@/lib/bilanV8';
 import { creditsForCaisseJour, settleCredit, type Credit } from '@/lib/credits';
-import { getReliquats, getMouvements } from '@/lib/storage';
+import { getReliquats, getMouvements, getExchangeRates } from '@/lib/storage';
 import { getAllSnapshots } from '@/lib/stageCaisse/storage';
 import type { Transaction, TransactionType, Reliquat } from '@/types';
 import { fmt, fmtRate } from '@/lib/formatNumbers';
-import { montantMadComptable } from '@/lib/calculations';
+import { montantMadComptable, calculStock } from '@/lib/calculations';
 
 dayjs.locale('fr');
 
@@ -295,15 +295,52 @@ export function CaisseJour() {
       .reduce((s, m) => s + Math.abs(m.montant), 0);
     // Crédits soldés
     const creditsSoldes = kpi.creditsSoldesMad ?? 0;
-    return caisseDepart + ventesMad - achatsMad + depotsMad - retraitsMad + alimentationsMAD - prelevementsMAD - chargesJour + creditsSoldes;
+    // Reliquats MAD : versements reçus aujourd'hui (remboursements)
+    const reliquatsMADVersements = getMouvements()
+      .filter((m) => m.type === 'RELIQUAT' && m.devise === 'MAD' &&
+        m.montant > 0 && dayjs(m.timestamp).format('YYYY-MM-DD') === day)
+      .reduce((s, m) => s + m.montant, 0);
+    // Reliquats MAD créés aujourd'hui (prêts sortants)
+    const reliquatsMADCreations = getMouvements()
+      .filter((m) => m.type === 'RELIQUAT' && m.devise === 'MAD' &&
+        m.montant < 0 && dayjs(m.timestamp).format('YYYY-MM-DD') === day)
+      .reduce((s, m) => s + Math.abs(m.montant), 0);
+    return caisseDepart + ventesMad - achatsMad + depotsMad - retraitsMad + alimentationsMAD - prelevementsMAD - chargesJour + creditsSoldes + reliquatsMADVersements - reliquatsMADCreations;
   }, [caisseDepart, txJour, chargesJour, day, kpi.creditsSoldesMad]);
 
   const creditsJour  = useMemo(() => { void dataTick; return creditsForCaisseJour(day); }, [day, dataTick]);
   const reliquatsJour = useMemo(() => { void dataTick; return reliquatsForCaisseJour(day); }, [day, dataTick]);
   const creditsTxJour = txJour.filter((t) => t.statut === 'CRÉDIT');
 
+  // ── Point 7 : filtre demi-journée ──
+  const [demiJournee, setDemiJournee] = useState<'TOUS' | 'MATIN' | 'APREM'>('TOUS');
+
+  const txJourFiltered = useMemo(() => {
+    if (demiJournee === 'TOUS') return txJour;
+    return txJour.filter((t) => {
+      const h = dayjs(t.date).hour();
+      return demiJournee === 'MATIN' ? h < 12 : h >= 12;
+    });
+  }, [txJour, demiJournee]);
+
+  // ── Point 5 : alimentations/prélèvements du jour ──
+  const alimentationsDuJour = useMemo(() => {
+    void dataTick;
+    return getMouvements().filter((m) =>
+      (m.type === 'ALIMENTATION' || m.type === 'PRELEVEMENT') &&
+      dayjs(m.timestamp).format('YYYY-MM-DD') === day
+    );
+  }, [day, dataTick]);
+
+  // ── Point 6 : stock restant par devise ──
+  const stockDevises = useMemo(() => {
+    void dataTick;
+    const rates = getExchangeRates();
+    return calculStock(transactions, rates);
+  }, [transactions, dataTick]);
+
   function handleSettleCredit(id: string) { settleCredit(id); setDataTick((n) => n + 1); }
-  function rowsForType(type: TransactionType): Transaction[] { return txJour.filter((t) => t.type === type); }
+  function rowsForType(type: TransactionType): Transaction[] { return txJourFiltered.filter((t) => t.type === type); }
 
   return (
     <div>
@@ -329,6 +366,81 @@ export function CaisseJour() {
 
           {/* ─── Colonne gauche ─── */}
           <div className="space-y-5">
+
+            {/* ── Point 7 : Filtre demi-journée ── */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-zinc-500">Période :</span>
+              {(['TOUS', 'MATIN', 'APREM'] as const).map((v) => (
+                <button key={v} onClick={() => setDemiJournee(v)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${demiJournee === v ? 'bg-blue-600 text-white' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200'}`}>
+                  {v === 'TOUS' ? 'Toute la journée' : v === 'MATIN' ? '🌅 Matin (avant 12h)' : '🌇 Après-midi (12h+)'}
+                </button>
+              ))}
+              {demiJournee !== 'TOUS' && <span className="text-xs text-zinc-400">{txJourFiltered.length} opération(s)</span>}
+            </div>
+
+            {/* ── Point 5 : Barre alimentations ── */}
+            {alimentationsDuJour.length > 0 && (
+              <section className="overflow-hidden rounded-xl border border-cyan-200 bg-white shadow-sm border-l-4 border-l-cyan-500">
+                <div className="flex items-center gap-3 border-b border-cyan-100 bg-cyan-50 px-4 py-2.5">
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-zinc-900">💧 Alimentations & Prélèvements</h2>
+                  <span className="ml-auto text-xs text-zinc-500">{alimentationsDuJour.length} mouvement(s)</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="border-b border-zinc-100 bg-zinc-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-medium text-zinc-500">Heure</th>
+                        <th className="px-3 py-2 text-left font-medium text-zinc-500">Type</th>
+                        <th className="px-3 py-2 text-left font-medium text-zinc-500">Devise</th>
+                        <th className="px-3 py-2 text-right font-medium text-zinc-500">Montant</th>
+                        <th className="px-3 py-2 text-left font-medium text-zinc-500">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-100">
+                      {alimentationsDuJour.map((m, i) => (
+                        <tr key={m.id} className={i % 2 === 0 ? 'bg-white' : 'bg-zinc-50/60'}>
+                          <td className="px-3 py-2 font-mono text-zinc-500">{dayjs(m.timestamp).format('HH:mm')}</td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold ${m.type === 'ALIMENTATION' ? 'bg-cyan-100 text-cyan-800' : 'bg-rose-100 text-rose-800'}`}>
+                              {m.type === 'ALIMENTATION' ? <ArrowUpCircle size={9} /> : <ArrowDownCircle size={9} />}
+                              {m.type === 'ALIMENTATION' ? 'ALIM.' : 'PRÉL.'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 font-bold text-zinc-700">{m.devise}</td>
+                          <td className={`px-3 py-2 text-right font-bold tabular-nums ${m.montant > 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                            {m.montant > 0 ? '+' : ''}{fmt(Math.abs(m.montant))}
+                          </td>
+                          <td className="px-3 py-2 italic text-zinc-400">{m.note || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            )}
+
+            {/* ── Point 6 : Stock restant par devise ── */}
+            <section className="rounded-xl border border-zinc-200 bg-white p-4 shadow-sm">
+              <h2 className="mb-1 text-sm font-bold text-zinc-900">📦 Stock restant par devise</h2>
+              <p className="mb-3 text-xs text-zinc-400">Départ + Achats − Ventes − Retraits</p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {stockDevises.length === 0 ? (
+                  <p className="col-span-4 py-4 text-center text-xs text-zinc-400">Aucun stock disponible.</p>
+                ) : (
+                  stockDevises.map((s) => (
+                    <div key={s.devise} className={`rounded-lg border p-3 ${s.stockActuel < 0 ? 'border-red-200 bg-red-50' : s.stockActuel === 0 ? 'border-zinc-100 bg-zinc-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-500">{s.devise}</p>
+                      <p className={`mt-1 text-xl font-bold tabular-nums ${s.stockActuel < 0 ? 'text-red-600' : s.stockActuel === 0 ? 'text-zinc-400' : 'text-emerald-700'}`}>
+                        {fmt(s.stockActuel)}
+                      </p>
+                      <p className="text-[10px] text-zinc-400">≈ {fmt(s.valeurMAD)} MAD</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </section>
+
             {SECTIONS.map(({ type, title, borderClass, headerClass, kind }) => {
               const rows = rowsForType(type);
               const total = rows.reduce((s, t) => s + montantMadComptable(t), 0);
