@@ -98,7 +98,7 @@ function TableCash({ rows }: { rows: Transaction[] }) {
                 {t.statut === 'CRÉDIT' && (
                   <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold text-violet-800">CRÉDIT</span>
                 )}
-                {t.statut === 'NON PAYÉ' && (
+                {t.statut === 'NON-PAYÉ' && (
                   <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">NON PAYÉ</span>
                 )}
               </TableCell>
