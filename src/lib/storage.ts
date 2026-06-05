@@ -477,6 +477,21 @@ export const addReliquat = (r: Omit<Reliquat, 'id' | 'dateMaj' | 'versements'>):
   };
   list.push(newR);
   saveReliquats(list);
+
+  // Si reliquat MAD → le bureau a sorti du MAD → ça réduit la caisse MAD
+  // On enregistre le mouvement pour traçabilité
+  if (r.devise === 'MAD') {
+    appendMouvement({
+      timestamp: new Date().toISOString(),
+      type: 'RELIQUAT',
+      devise: 'MAD',
+      montant: -r.montantInitial, // sortie MAD de la caisse (prêt au client)
+      operationRef: newR.id,
+      caissier: getCurrentUser()?.nom ?? 'Système',
+      note: `Reliquat créé — client: ${r.client}`,
+    });
+  }
+
   return newR;
 };
 
@@ -501,6 +516,20 @@ export const ajouterVersement = (
   list[idx] = r;
   saveReliquats(list);
   appendMouvementReliquat(r, newV);
+
+  // Si reliquat MAD → le versement ramène du MAD dans la caisse
+  if (r.devise === 'MAD') {
+    appendMouvement({
+      timestamp: new Date().toISOString(),
+      type: 'RELIQUAT',
+      devise: 'MAD',
+      montant: versement.montant, // entrée MAD dans la caisse (remboursement)
+      operationRef: r.id,
+      caissier: getCurrentUser()?.nom ?? 'Système',
+      note: `Versement reliquat — client: ${r.client}`,
+    });
+  }
+
   return r;
 };
 
