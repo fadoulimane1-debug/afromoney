@@ -1,6 +1,6 @@
 import { getProSettings } from '@/lib/proSettings';
-import { getTransactions, getExchangeRates } from '@/lib/storage';
-import { calculStock } from '@/lib/calculations';
+import { getTransactions, getMouvements } from '@/lib/storage';
+import { stockDisponibleDevise } from '@/lib/calculations';
 import { fmtMad, fmtDevise } from '@/lib/formatNumbers';
 import type { TransactionType } from '@/types';
 
@@ -15,6 +15,8 @@ export function validateOperationControls(input: {
   montant: number;
   montantMAD: number;
   note: string;
+  /** Date de l'opération (YYYY-MM-DD) — stock calculé à cette date (saisie rétroactive). */
+  dateOperation?: string;
 }): ControlIssue[] {
   const s = getProSettings();
   const issues: ControlIssue[] = [];
@@ -32,18 +34,15 @@ export function validateOperationControls(input: {
     }
   }
 
-  // FIX BUG 2 — calculStock inclut maintenant DEPOT+ACHAT−VENTE−RETRAIT
-  // donc le stock disponible est correct pour autoriser les ventes
   if (input.type === 'VENTE' && input.devise !== 'MAD' && s.bloquerVenteStockInsuffisant) {
-    const txs = getTransactions();
-    const rates = getExchangeRates();
-    const stocks = calculStock(txs, rates);
-    const st = stocks.find((x) => x.devise === input.devise);
-    const dispo = st?.stockActuel ?? 0;
+    const dispo = stockDisponibleDevise(input.devise, getTransactions(), {
+      asOfDay: input.dateOperation,
+      mouvements: getMouvements(),
+    });
     if (input.montant > dispo + 0.0001) {
       issues.push({
         level: 'error',
-        message: `Stock ${input.devise} insuffisant (disponible : ${fmtDevise(dispo)} ${input.devise}).`,
+        message: `Stock ${input.devise} insuffisant (disponible : ${fmtDevise(dispo)}).`,
       });
     }
   }
