@@ -64,6 +64,139 @@ export function sumMontantMadParType(transactions: Transaction[], type: Transact
     .reduce((s, t) => s + montantMadComptable(t), 0);
 }
 
+/** Filtre phase journée pour le stock restant caisse du jour. */
+export type StockJourMomentFilter = 'ALL' | 'MATIN' | 'APRES_MIDI';
+
+function txMatchesMomentFilter(
+  tx: Pick<Transaction, 'moment' | 'date'>,
+  filter: StockJourMomentFilter,
+): boolean {
+  if (filter === 'ALL') return true;
+  const hour = dayjs(tx.date).hour();
+  if (filter === 'MATIN') return hour < 12;
+  return hour >= 12;
+}
+
+export interface StockRestantJourRow {
+  devise: string;
+  depart: number;
+  ventes: number;
+  alimentations: number;
+  depots: number;
+  achats: number;
+  charges: number;
+  retraits: number;
+  prelevements: number;
+  restant: number;
+}
+
+function mouvementMatchesMoment(
+  timestamp: string,
+  filter: StockJourMomentFilter,
+): boolean {
+  if (filter === 'ALL') return true;
+  const hour = dayjs(timestamp).hour();
+  if (filter === 'MATIN') return hour < 12;
+  return hour >= 12;
+}
+
+/**
+ * Stock restant par devise — formule caisse :
+ * Départ + Ventes + Alimentations + Dépôts − Achats − Charges − Retraits (− Prélèvements journal).
+ */
+export function computeStockRestantJour(
+  transactions: Transaction[],
+  departByDevise: Record<string, number>,
+  dayYmd: string,
+  devisesOrder: readonly string[],
+  momentFilter: StockJourMomentFilter = 'ALL',
+  mouvements: { timestamp: string; devise: string; type: string; montant: number }[] = [],
+): StockRestantJourRow[] {
+  const txJ = filterTransactionsComptables(transactions)
+    .filter((t) => dayjs(t.date).format('YYYY-MM-DD') === dayYmd)
+    .filter((t) => txMatchesMomentFilter(t, momentFilter));
+
+  const mvJ = mouvements.filter(
+    (m) =>
+      dayjs(m.timestamp).format('YYYY-MM-DD') === dayYmd &&
+      mouvementMatchesMoment(m.timestamp, momentFilter),
+  );
+
+  const activeDevises = new Set<string>();
+  for (const d of devisesOrder) activeDevises.add(d);
+  for (const d of Object.keys(departByDevise)) {
+    if (d !== 'MAD') activeDevises.add(d);
+  }
+  for (const t of txJ) {
+    if (t.devise !== 'MAD') activeDevises.add(t.devise);
+  }
+  for (const m of mvJ) {
+    if (m.devise !== 'MAD') activeDevises.add(m.devise);
+  }
+
+  return devisesOrder
+    .filter((devise) => activeDevises.has(devise))
+    .map((devise) => {
+      const depart = departByDevise[devise] ?? 0;
+      let ventes = 0;
+      let alimentations = 0;
+      let depots = 0;
+      let achats = 0;
+      let charges = 0;
+      let retraits = 0;
+      let prelevements = 0;
+
+      for (const t of txJ) {
+        if (t.type === 'CHARGES') {
+          if (devise === 'MAD') charges += t.montantMAD;
+          else if (t.devise === devise) charges += t.montant;
+          continue;
+        }
+        if (t.devise !== devise) continue;
+        if (t.type === 'VENTE') ventes += t.montant;
+        if (t.type === 'DEPOT') depots += t.montant;
+        if (t.type === 'ACHAT') achats += t.montant;
+        if (t.type === 'RETRAIT') retraits += t.montant;
+      }
+
+      for (const m of mvJ) {
+        if (m.devise !== devise) continue;
+        if (m.type === 'ALIMENTATION') alimentations += Math.abs(m.montant);
+        if (m.type === 'PRELEVEMENT') prelevements += Math.abs(m.montant);
+      }
+
+      const restant = Math.round(
+        (depart + ventes + alimentations + depots - achats - charges - retraits - prelevements) *
+          100,
+      ) / 100;
+
+      return {
+        devise,
+        depart,
+        ventes,
+        alimentations,
+        depots,
+        achats,
+        charges,
+        retraits,
+        prelevements,
+        restant,
+      };
+    })
+    .filter(
+      (r) =>
+        Math.abs(r.depart) > 0.0001 ||
+        r.ventes > 0 ||
+        r.alimentations > 0 ||
+        r.depots > 0 ||
+        r.achats > 0 ||
+        r.charges > 0 ||
+        r.retraits > 0 ||
+        r.prelevements > 0 ||
+        Math.abs(r.restant) > 0.0001,
+    );
+}
+
 export function calculStock(transactions: Transaction[], rates: ExchangeRate[]): Stock[] {
   const actives = filterTransactionsComptables(transactions);
   const rateMap = new Map<string, number>(
