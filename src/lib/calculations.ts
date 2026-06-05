@@ -75,8 +75,9 @@ export function calculStock(transactions: Transaction[], rates: ExchangeRate[]):
   for (const tx of actives) {
     if (tx.devise === 'MAD') continue;
     const entry = stockMap.get(tx.devise) ?? { achete: 0, vendu: 0 };
-    if (tx.type === 'ACHAT') entry.achete += tx.montant;
-    if (tx.type === 'VENTE') entry.vendu += tx.montant;
+        // DÉPÔT devise = entrée stock (ouverture) — même si MAD encore NON-PAYÉ
+    if (tx.type === 'ACHAT' || tx.type === 'DEPOT') entry.achete += tx.montant;
+    if (tx.type === 'VENTE' || tx.type === 'RETRAIT') entry.vendu += tx.montant;
     stockMap.set(tx.devise, entry);
   }
 
