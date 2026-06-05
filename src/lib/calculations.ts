@@ -75,7 +75,7 @@ export function calculStock(transactions: Transaction[], rates: ExchangeRate[]):
   for (const tx of actives) {
     if (tx.devise === 'MAD') continue;
     const entry = stockMap.get(tx.devise) ?? { achete: 0, vendu: 0 };
-        // DÉPÔT devise = entrée stock (ouverture) — même si MAD encore NON-PAYÉ
+    // DÉPÔT devise = entrée stock (ouverture / consignation) — même si MAD encore NON-PAYÉ
     if (tx.type === 'ACHAT' || tx.type === 'DEPOT') entry.achete += tx.montant;
     if (tx.type === 'VENTE' || tx.type === 'RETRAIT') entry.vendu += tx.montant;
     stockMap.set(tx.devise, entry);
@@ -92,6 +92,41 @@ export function calculStock(transactions: Transaction[], rates: ExchangeRate[]):
       valeurMAD: calculMontantMAD(stockActuel, taux),
     };
   });
+}
+
+/**
+ * Stock disponible d'une devise pour contrôler une VENTE.
+ * @param asOfDay YYYY-MM-DD — si fourni, ignore les opérations des jours suivants (saisie à une date passée).
+ */
+export function stockDisponibleDevise(
+  devise: string,
+  transactions: Transaction[],
+  options?: {
+    asOfDay?: string;
+    mouvements?: { timestamp: string; devise: string; type: string; montant: number }[];
+  },
+): number {
+  const cutoff = options?.asOfDay ? dayjs(options.asOfDay).endOf('day') : null;
+  let txs = filterTransactionsComptables(transactions).filter((t) => t.devise === devise);
+  if (cutoff) {
+    txs = txs.filter((t) => !dayjs(t.date).isAfter(cutoff));
+  }
+
+  let achete = 0;
+  let vendu = 0;
+  for (const tx of txs) {
+    if (tx.type === 'ACHAT' || tx.type === 'DEPOT') achete += tx.montant;
+    if (tx.type === 'VENTE' || tx.type === 'RETRAIT') vendu += tx.montant;
+  }
+
+  for (const m of options?.mouvements ?? []) {
+    if (m.devise !== devise) continue;
+    if (cutoff && dayjs(m.timestamp).isAfter(cutoff)) continue;
+    if (m.type === 'ALIMENTATION') achete += Math.abs(m.montant);
+    if (m.type === 'PRELEVEMENT') vendu += Math.abs(m.montant);
+  }
+
+  return Math.round((achete - vendu) * 100) / 100;
 }
 
 /** Agrège achats / ventes / charges en MAD sur une liste déjà filtrée (ex. même périmètre qu’un TCD Excel). */
