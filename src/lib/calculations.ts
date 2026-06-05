@@ -83,10 +83,12 @@ export interface StockRestantJourRow {
   ventes: number;
   alimentations: number;
   depots: number;
+  reliquats: number;
   achats: number;
   charges: number;
   retraits: number;
   prelevements: number;
+  credits: number;
   restant: number;
 }
 
@@ -102,7 +104,8 @@ function mouvementMatchesMoment(
 
 /**
  * Stock restant par devise — formule caisse :
- * Départ + Ventes + Alimentations + Dépôts − Achats − Charges − Retraits (− Prélèvements journal).
+ * Départ + Ventes + Alimentations + Dépôts + Reliquats
+ * − Achats − Charges − Retraits − Prélèvements − Crédits
  */
 export function computeStockRestantJour(
   transactions: Transaction[],
@@ -111,6 +114,7 @@ export function computeStockRestantJour(
   devisesOrder: readonly string[],
   momentFilter: StockJourMomentFilter = 'ALL',
   mouvements: { timestamp: string; devise: string; type: string; montant: number }[] = [],
+  creditsPage: { date: string; devise: string; montant: number; statut: string }[] = [],
 ): StockRestantJourRow[] {
   const txJ = filterTransactionsComptables(transactions)
     .filter((t) => dayjs(t.date).format('YYYY-MM-DD') === dayYmd)
@@ -133,6 +137,9 @@ export function computeStockRestantJour(
   for (const m of mvJ) {
     if (m.devise !== 'MAD') activeDevises.add(m.devise);
   }
+  for (const c of creditsPage) {
+    if (c.date === dayYmd && c.devise !== 'MAD') activeDevises.add(c.devise);
+  }
 
   return devisesOrder
     .filter((devise) => activeDevises.has(devise))
@@ -141,10 +148,12 @@ export function computeStockRestantJour(
       let ventes = 0;
       let alimentations = 0;
       let depots = 0;
+      let reliquats = 0;
       let achats = 0;
       let charges = 0;
       let retraits = 0;
       let prelevements = 0;
+      let credits = 0;
 
       for (const t of txJ) {
         if (t.type === 'CHARGES') {
@@ -157,16 +166,31 @@ export function computeStockRestantJour(
         if (t.type === 'DEPOT') depots += t.montant;
         if (t.type === 'ACHAT') achats += t.montant;
         if (t.type === 'RETRAIT') retraits += t.montant;
+        if (t.statut === 'CRÉDIT') credits += t.montant;
       }
 
       for (const m of mvJ) {
         if (m.devise !== devise) continue;
         if (m.type === 'ALIMENTATION') alimentations += Math.abs(m.montant);
         if (m.type === 'PRELEVEMENT') prelevements += Math.abs(m.montant);
+        if (m.type === 'RELIQUAT') reliquats += Math.abs(m.montant);
       }
 
+      credits += creditsPage
+        .filter((c) => c.date === dayYmd && c.devise === devise && c.statut !== 'Payé')
+        .reduce((s, c) => s + c.montant, 0);
+
       const restant = Math.round(
-        (depart + ventes + alimentations + depots - achats - charges - retraits - prelevements) *
+        (depart +
+          ventes +
+          alimentations +
+          depots +
+          reliquats -
+          achats -
+          charges -
+          retraits -
+          prelevements -
+          credits) *
           100,
       ) / 100;
 
@@ -176,10 +200,12 @@ export function computeStockRestantJour(
         ventes,
         alimentations,
         depots,
+        reliquats,
         achats,
         charges,
         retraits,
         prelevements,
+        credits,
         restant,
       };
     })
@@ -189,10 +215,12 @@ export function computeStockRestantJour(
         r.ventes > 0 ||
         r.alimentations > 0 ||
         r.depots > 0 ||
+        r.reliquats > 0 ||
         r.achats > 0 ||
         r.charges > 0 ||
         r.retraits > 0 ||
         r.prelevements > 0 ||
+        r.credits > 0 ||
         Math.abs(r.restant) > 0.0001,
     );
 }
