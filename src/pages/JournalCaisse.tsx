@@ -3,17 +3,8 @@ import { PageHero } from '@/components/PageHero';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
 import {
-  Lock,
-  TrendingUp,
-  TrendingDown,
-  Plus,
-  Download,
-  Search,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  ArrowUpCircle,
-  ArrowDownCircle,
+  Lock, TrendingUp, TrendingDown, Plus, Download, Search, X,
+  ChevronLeft, ChevronRight, ArrowUpCircle, ArrowDownCircle, Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,11 +14,7 @@ import { DEVISES } from '@/lib/constants';
 import { fmt } from '@/lib/formatNumbers';
 import type { MouvementCaisse, MouvementType } from '@/types';
 import {
-  getMouvements,
-  getSoldeDevise,
-  appendAlimentation,
-  appendPrelevement,
-  getCurrentUser,
+  getMouvements, getSoldeDevise, appendAlimentation, appendPrelevement, getCurrentUser,
 } from '@/lib/storage';
 
 dayjs.locale('fr');
@@ -51,51 +38,29 @@ const ALL_TYPES: MouvementType[] = [
   'ACHAT', 'VENTE', 'DEPOT', 'RETRAIT', 'CHARGES', 'RELIQUAT', 'ALIMENTATION', 'PRELEVEMENT', 'ANNULATION',
 ];
 
-function signClass(n: number) {
-  return n > 0 ? 'text-emerald-700' : n < 0 ? 'text-red-600' : 'text-zinc-500';
-}
-function signPrefix(n: number) {
-  return n > 0 ? '+' : '';
-}
+function signClass(n: number) { return n > 0 ? 'text-emerald-700' : n < 0 ? 'text-red-600' : 'text-zinc-500'; }
+function signPrefix(n: number) { return n > 0 ? '+' : ''; }
 
 function TypeBadge({ type }: { type: MouvementType }) {
   const cfg = TYPE_CFG[type];
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${cfg.badgeClass}`}>
-      {cfg.shortLabel}
-    </span>
-  );
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${cfg.badgeClass}`}>{cfg.shortLabel}</span>;
 }
 
-interface ManualForm {
-  sens: 'ALIMENTATION' | 'PRELEVEMENT';
-  montant: string;
-  devise: string;
-  note: string;
-}
-
-function emptyManualForm(): ManualForm {
-  return { sens: 'ALIMENTATION', montant: '', devise: 'MAD', note: '' };
-}
+interface ManualForm { sens: 'ALIMENTATION' | 'PRELEVEMENT'; montant: string; devise: string; note: string; }
+function emptyManualForm(): ManualForm { return { sens: 'ALIMENTATION', montant: '', devise: 'MAD', note: '' }; }
 
 function ManualEntryPanel({ onDone }: { onDone: () => void }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<ManualForm>(emptyManualForm);
   const [error, setError] = useState('');
 
-  function set<K extends keyof ManualForm>(k: K, v: ManualForm[K]) {
-    setForm((f) => ({ ...f, [k]: v }));
-    setError('');
-  }
+  function set<K extends keyof ManualForm>(k: K, v: ManualForm[K]) { setForm((f) => ({ ...f, [k]: v })); setError(''); }
 
   function handleSave() {
     const val = parseFloat(form.montant);
     if (!Number.isFinite(val) || val <= 0) { setError('Montant > 0 requis'); return; }
-    if (form.sens === 'ALIMENTATION') {
-      appendAlimentation({ montant: val, devise: form.devise, note: form.note.trim() || undefined });
-    } else {
-      appendPrelevement({ montant: val, devise: form.devise, note: form.note.trim() || undefined });
-    }
+    if (form.sens === 'ALIMENTATION') appendAlimentation({ montant: val, devise: form.devise, note: form.note.trim() || undefined });
+    else appendPrelevement({ montant: val, devise: form.devise, note: form.note.trim() || undefined });
     setForm(emptyManualForm());
     setOpen(false);
     onDone();
@@ -173,6 +138,12 @@ export function JournalCaisse() {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
 
+  // ── État édition alimentation ──
+  const [editTarget, setEditTarget] = useState<MouvementCaisse | null>(null);
+  const [editMontant, setEditMontant] = useState('');
+  const [editNote, setEditNote] = useState('');
+  const [editError, setEditError] = useState('');
+
   function refresh() { setMouvements(getMouvements()); setPage(1); }
 
   useEffect(() => {
@@ -183,6 +154,26 @@ export function JournalCaisse() {
 
   const isAdmin = getCurrentUser()?.role === 'ADMIN';
 
+  function handleEdit(m: MouvementCaisse) {
+    setEditTarget(m);
+    setEditMontant(String(Math.abs(m.montant)));
+    setEditNote(m.note ?? '');
+    setEditError('');
+  }
+
+  function handleEditSave() {
+    if (!editTarget) return;
+    const val = parseFloat(editMontant);
+    if (!Number.isFinite(val) || val <= 0) { setEditError('Montant > 0 requis'); return; }
+    const sign = editTarget.montant >= 0 ? 1 : -1;
+    const all = getMouvements().map((x) =>
+      x.id === editTarget.id ? { ...x, montant: sign * val, note: editNote.trim() || undefined } : x
+    );
+    localStorage.setItem('mouvements_caisse', JSON.stringify(all));
+    setEditTarget(null);
+    refresh();
+  }
+
   const filtered = mouvements
     .filter((m) => {
       if (filterDate && !m.timestamp.startsWith(filterDate)) return false;
@@ -190,9 +181,7 @@ export function JournalCaisse() {
       if (filterDevise !== 'TOUS' && m.devise !== filterDevise) return false;
       if (search) {
         const q = search.toLowerCase();
-        if (!m.caissier.toLowerCase().includes(q) &&
-            !(m.operationRef ?? '').toLowerCase().includes(q) &&
-            !(m.note ?? '').toLowerCase().includes(q)) return false;
+        if (!m.caissier.toLowerCase().includes(q) && !(m.operationRef ?? '').toLowerCase().includes(q) && !(m.note ?? '').toLowerCase().includes(q)) return false;
       }
       return true;
     })
@@ -200,7 +189,6 @@ export function JournalCaisse() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
   const devisesList = ['MAD', ...DEVISES.filter((d) => d !== 'MAD')];
   const soldeCourant = Object.fromEntries(devisesList.map((d) => [d, getSoldeDevise(d, mouvements)]));
   const devisesActives = devisesList.filter((d) => soldeCourant[d] !== 0);
@@ -258,6 +246,41 @@ export function JournalCaisse() {
 
         <ManualEntryPanel onDone={refresh} />
 
+        {/* Modal édition alimentation */}
+        {editTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 backdrop-blur-sm">
+            <div className="w-full max-w-sm rounded-xl border border-zinc-300 bg-white p-6 shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="font-semibold text-zinc-900">
+                  Modifier {editTarget.type === 'ALIMENTATION' ? 'alimentation' : 'prélèvement'}
+                </h3>
+                <button onClick={() => setEditTarget(null)} className="text-zinc-500 hover:text-zinc-800"><X size={18} /></button>
+              </div>
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-zinc-600">
+                    Montant ({editTarget.devise}) *
+                  </label>
+                  <Input type="number" min="0.01" step="0.01" value={editMontant}
+                    onChange={(e) => { setEditMontant(e.target.value); setEditError(''); }}
+                    className={editError ? 'border-red-400' : ''} />
+                  {editError && <p className="mt-1 text-xs text-red-500">{editError}</p>}
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-zinc-600">Note</label>
+                  <Input value={editNote} onChange={(e) => setEditNote(e.target.value)} placeholder="Raison..." />
+                </div>
+              </div>
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setEditTarget(null)}>Annuler</Button>
+                <Button onClick={handleEditSave} className="bg-cyan-600 hover:bg-cyan-700 text-white">
+                  Enregistrer
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <Card>
           <CardContent className="p-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -283,9 +306,7 @@ export function JournalCaisse() {
                 <Input value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                   placeholder="Caissier, réf., note..." className="h-8 w-44 pl-8 text-xs" />
                 {search && (
-                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700">
-                    <X size={11} />
-                  </button>
+                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700"><X size={11} /></button>
                 )}
               </div>
               <Button variant="outline" size="sm" onClick={exportCSV} className="ml-auto h-8">
@@ -316,9 +337,7 @@ export function JournalCaisse() {
           <CardContent className="p-0">
             {filtered.length === 0 ? (
               <div className="py-16 text-center text-sm text-zinc-400">
-                {mouvements.length === 0
-                  ? 'Aucun mouvement enregistré. Les mouvements se créent automatiquement lors des opérations.'
-                  : 'Aucun mouvement pour ces filtres.'}
+                {mouvements.length === 0 ? 'Aucun mouvement enregistré.' : 'Aucun mouvement pour ces filtres.'}
               </div>
             ) : (
               <>
@@ -335,7 +354,7 @@ export function JournalCaisse() {
                         <th className="px-3 py-2.5 text-left font-medium text-zinc-500">Réf. opération</th>
                         <th className="px-3 py-2.5 text-left font-medium text-zinc-500">Caissier</th>
                         <th className="px-3 py-2.5 text-left font-medium text-zinc-500">Note</th>
-                        <th className="px-3 py-2.5 text-center font-medium text-zinc-500">Statut</th>
+                        <th className="px-3 py-2.5 text-center font-medium text-zinc-500">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100">
@@ -356,40 +375,49 @@ export function JournalCaisse() {
                           <td className="px-3 py-2.5 text-right tabular-nums">
                             <span className={`font-semibold ${signClass(m.soldeApres)}`}>{fmt(m.soldeApres)}</span>
                             <span className="ml-1">
-                              {m.montant > 0
-                                ? <TrendingUp size={10} className="inline text-emerald-500" />
-                                : <TrendingDown size={10} className="inline text-red-500" />}
+                              {m.montant > 0 ? <TrendingUp size={10} className="inline text-emerald-500" /> : <TrendingDown size={10} className="inline text-red-500" />}
                             </span>
                           </td>
                           <td className="px-3 py-2.5 font-mono text-[10px]">
                             {m.operationNumero
-                              ? <span className="font-semibold text-blue-700" title={m.operationRef ?? m.operationNumero}>{m.operationNumero}</span>
+                              ? <span className="font-semibold text-blue-700">{m.operationNumero}</span>
                               : m.operationRef
-                                ? <span className="text-zinc-400" title={m.operationRef}>{m.operationRef.slice(0, 16)}{m.operationRef.length > 16 ? '…' : ''}</span>
+                                ? <span className="text-zinc-400">{m.operationRef.slice(0, 16)}{m.operationRef.length > 16 ? '…' : ''}</span>
                                 : <span className="text-zinc-400">—</span>}
                           </td>
                           <td className="px-3 py-2.5 text-zinc-600">{m.caissier}</td>
                           <td className="max-w-[120px] truncate px-3 py-2.5 text-zinc-400 italic" title={m.note}>{m.note || '—'}</td>
-
-                          {/* Statut — LOCK pour caissier, LOCK + Supprimer pour admin */}
                           <td className="px-3 py-2.5 text-center">
-                            {isAdmin ? (
-                              <div className="flex flex-col items-center gap-1">
+                            <div className="flex flex-col items-center gap-1">
+                              {/* Bouton modifier — ALIMENTATION et PRELEVEMENT seulement */}
+                              {(m.type === 'ALIMENTATION' || m.type === 'PRELEVEMENT') && (
+                                <button
+                                  onClick={() => handleEdit(m)}
+                                  className="inline-flex items-center gap-1 rounded-full bg-cyan-100 px-2 py-0.5 text-[10px] font-semibold text-cyan-700 ring-1 ring-cyan-200 hover:bg-cyan-200"
+                                  title="Modifier"
+                                >
+                                  <Pencil size={9} /> Modifier
+                                </button>
+                              )}
+                              {/* Bouton supprimer — admin seulement */}
+                              {isAdmin ? (
+                                <>
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 ring-1 ring-zinc-200">
+                                    <Lock size={9} /> LOCK
+                                  </span>
+                                  <button
+                                    onClick={() => handleDelete(m.id)}
+                                    className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-200"
+                                  >
+                                    🗑 Supprimer
+                                  </button>
+                                </>
+                              ) : (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 ring-1 ring-zinc-200">
                                   <Lock size={9} /> LOCK
                                 </span>
-                                <button
-                                  onClick={() => handleDelete(m.id)}
-                                  className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-200"
-                                >
-                                  🗑 Supprimer
-                                </button>
-                              </div>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-500 ring-1 ring-zinc-200">
-                                <Lock size={9} /> LOCK
-                              </span>
-                            )}
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -399,9 +427,7 @@ export function JournalCaisse() {
 
                 {totalPages > 1 && (
                   <div className="flex items-center justify-between border-t border-zinc-200 px-4 py-3">
-                    <p className="text-xs text-zinc-500">
-                      Page {page} / {totalPages} — {filtered.length} mouvement{filtered.length !== 1 ? 's' : ''}
-                    </p>
+                    <p className="text-xs text-zinc-500">Page {page} / {totalPages} — {filtered.length} mouvement{filtered.length !== 1 ? 's' : ''}</p>
                     <div className="flex items-center gap-1">
                       <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>
                         <ChevronLeft size={13} />
@@ -410,8 +436,7 @@ export function JournalCaisse() {
                         .filter((p) => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
                         .reduce<(number | '...')[]>((acc, p, idx, arr) => {
                           if (idx > 0 && p - (arr[idx - 1] as number) > 1) acc.push('...');
-                          acc.push(p);
-                          return acc;
+                          acc.push(p); return acc;
                         }, [])
                         .map((p, i) =>
                           p === '...' ? (
