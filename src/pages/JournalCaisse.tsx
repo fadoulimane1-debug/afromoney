@@ -399,6 +399,14 @@ export function JournalCaisse() {
                                   <Pencil size={9} /> Modifier
                                 </button>
                               )}
+                              {(m.type === 'ALIMENTATION' || m.type === 'PRELEVEMENT') && (
+                              <button
+                               onClick={() => handleDelete(m.id)}
+                                className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-200"
+                               >
+                               🗑 Supprimer
+                              </button>
+                              )}
                               {/* Bouton supprimer — admin seulement */}
                               {isAdmin ? (
                                 <>
