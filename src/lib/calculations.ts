@@ -162,9 +162,9 @@ export function computeStockRestantJour(
           continue;
         }
         if (t.devise !== devise) continue;
-        if (t.type === 'VENTE') ventes += t.montant;
-        if (t.type === 'DEPOT') depots += t.montant;
-        if (t.type === 'ACHAT') achats += t.montant;
+        if (t.type === 'ACHAT')   achats  += t.montant; // achat devise → stock devise augmente
+        if (t.type === 'VENTE')   ventes  += t.montant; // vente devise → stock devise baisse
+        if (t.type === 'DEPOT')   depots  += t.montant;
         if (t.type === 'RETRAIT') retraits += t.montant;
         if (t.statut === 'CRÉDIT') credits += t.montant;
       }
@@ -182,11 +182,11 @@ export function computeStockRestantJour(
 
       const restant = Math.round(
         (depart +
-          ventes +
+          achats +        // achat devise → stock +
           alimentations +
           depots +
           reliquats -
-          achats -
+          ventes -        // vente devise → stock -
           charges -
           retraits -
           prelevements -
