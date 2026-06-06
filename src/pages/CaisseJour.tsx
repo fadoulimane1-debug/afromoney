@@ -385,12 +385,37 @@ export function CaisseJour() {
     .filter((t) => t.type === 'CHARGES')
     .reduce((s, t) => s + t.montantMAD, 0);
 
-  const caisseFinMAD =
-    caisseDepart +
-    kpi.totalDepotsMad -
-    kpi.totalRetraitsMad -
-    chargesJour +
-    kpi.creditsSoldesMad;
+  // Caisse MAD durant la journée :
+  // Départ + Dépôts MAD + Ventes (encaisse MAD) − Achats (débite MAD) − Retraits MAD − Charges + Alimentations MAD − Prélèvements MAD − Crédits soldés + Reliquats soldés
+  const caisseFinMAD = useMemo(() => {
+    // Ventes payées → encaisse MAD
+    const ventesMad = txJour
+      .filter((t) => t.type === 'VENTE' && t.statut === 'PAYÉ' && t.devise !== 'MAD')
+      .reduce((s, t) => s + t.montantMAD, 0);
+    // Achats payés → débite MAD
+    const achatsMad = txJour
+      .filter((t) => t.type === 'ACHAT' && t.statut !== 'CRÉDIT')
+      .reduce((s, t) => s + t.montantMAD, 0);
+    // Dépôts MAD payés
+    const depotsMad = txJour
+      .filter((t) => t.type === 'DEPOT' && t.devise === 'MAD' && t.statut === 'PAYÉ')
+      .reduce((s, t) => s + t.montant, 0);
+    // Retraits MAD
+    const retraitsMad = txJour
+      .filter((t) => t.type === 'RETRAIT' && t.devise === 'MAD')
+      .reduce((s, t) => s + t.montant, 0);
+    // Alimentations MAD
+    const alimentationsMAD = getMouvements()
+      .filter((m) => m.type === 'ALIMENTATION' && m.devise === 'MAD' && dayjs(m.timestamp).format('YYYY-MM-DD') === day)
+      .reduce((s, m) => s + Math.abs(m.montant), 0);
+    // Prélèvements MAD
+    const prelevementsMAD = getMouvements()
+      .filter((m) => m.type === 'PRELEVEMENT' && m.devise === 'MAD' && dayjs(m.timestamp).format('YYYY-MM-DD') === day)
+      .reduce((s, m) => s + Math.abs(m.montant), 0);
+    // Crédits soldés (payés en MAD → sort de caisse)
+    const creditsSoldesMAD = kpi.creditsSoldesMad ?? 0;
+    return caisseDepart + depotsMad + ventesMad - achatsMad - retraitsMad - chargesJour + alimentationsMAD - prelevementsMAD - creditsSoldesMAD;
+  }, [caisseDepart, txJour, chargesJour, day, kpi.creditsSoldesMad]);
 
   const creditsJour = useMemo(() => {
     void dataTick;
@@ -766,30 +791,15 @@ export function CaisseJour() {
 
               <div className="border-t border-zinc-200 pt-2 mt-1" />
 
-              {/* Bénéfice estimé */}
-              <div className="flex justify-between gap-2 rounded-md px-2 py-2 bg-zinc-50">
-                <span className="text-xs font-semibold text-zinc-700">Bénéfice estimé</span>
-                <span
-                  className={`font-bold tabular-nums text-sm ${
-                    kpi.beneficeEstime >= 0 ? 'text-emerald-700' : 'text-red-600'
-                  }`}
-                >
-                  {fmt(kpi.beneficeEstime)}
-                </span>
-              </div>
-              <p className="px-2 text-[10px] text-zinc-400 leading-tight">
-                = Ventes − Achats − Charges
-              </p>
-
               <div className="border-t-2 border-blue-300 pt-3 mt-2" />
 
-              {/* Caisse fin */}
+              {/* Caisse durant la journée */}
               <div className="flex justify-between gap-2 rounded-lg bg-blue-600 px-3 py-3">
-                <span className="text-xs font-bold text-blue-100">Caisse fin de journée (estim.)</span>
+                <span className="text-xs font-bold text-blue-100">Caisse durant la journée</span>
                 <span className="text-sm font-bold tabular-nums text-white">{fmt(caisseFinMAD)}</span>
               </div>
               <p className="px-1 text-[10px] text-zinc-400 leading-tight">
-                = Départ + Dépôts − Retraits − Charges + Crédits soldés
+                = Départ + Dépôts + Ventes − Achats − Retraits − Charges + Alim. − Prél. − Crédits soldés
               </p>
             </CardContent>
           </Card>
