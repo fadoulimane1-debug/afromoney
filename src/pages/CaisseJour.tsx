@@ -496,7 +496,7 @@ export function CaisseJour() {
           <div>
             <h2 className="text-sm font-bold text-zinc-900">Stock restant par devise</h2>
             <p className="text-xs text-zinc-500">
-              Départ + Ventes + Alimentations + Dépôts + Reliquats − Achats − Charges − Retraits −
+              Départ + Achats + Alimentations + Dépôts + Reliquats − Ventes − Charges − Retraits −
               Prélèvements − Crédits
             </p>
           </div>
