@@ -273,8 +273,20 @@ export function Credits() {
       return;
     }
 
-    const m = parseFloat(form.montant);
-    const t = parseFloat(form.taux);
+    // Parser le montant en gérant le point comme séparateur de milliers
+    // Ex: "50.000" → 50000 (pas 50)
+    function parseMontantInput(raw: string): number {
+      let s = raw.trim().replace(/\s/g, '');
+      if (!s.includes(',') && /^\d{1,3}(\.\d{3})+$/.test(s)) {
+        s = s.replace(/\./g, ''); // "50.000" → "50000"
+      } else {
+        s = s.replace(',', '.'); // "50,5" → "50.5"
+      }
+      return parseFloat(s);
+    }
+
+    const m = parseMontantInput(form.montant);
+    const t = parseMontantInput(form.taux);
     const newCredit: Credit = {
       id: newEntityId('credit'),
       date: form.date,
@@ -282,7 +294,7 @@ export function Credits() {
       devise: form.devise,
       montant: m,
       taux: t,
-      contre_val_mad: form.contre_val_mad !== '' ? parseFloat(form.contre_val_mad) : m * t,
+      contre_val_mad: form.contre_val_mad !== '' ? parseMontantInput(form.contre_val_mad) : m * t,
       note: form.note.trim(),
       statut: form.statut,
       echeance: form.echeance || undefined,
