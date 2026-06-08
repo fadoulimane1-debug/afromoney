@@ -375,6 +375,10 @@ export function CaisseJour() {
   const kpi = useMemo(() => summarizeCaisseJourV8(transactions, dayJs), [transactions, dayJs]);
 
   const caisseDepart = useMemo(() => {
+    // Priorité : snapshot DEPART du journal-journee (saisi le matin)
+    const snap = getSnapshotMap(CAISSE_ID, day, 'DEPART');
+    if (snap['MAD'] != null && snap['MAD'] > 0) return snap['MAD'];
+    // Fallback : ancien système
     const fromStore = getCaisseDepartJour(day);
     if (fromStore != null) return fromStore;
     const first = txJour.map((t) => t.caisseDepart).find((c) => c != null && c > 0);
@@ -414,7 +418,12 @@ export function CaisseJour() {
       .reduce((s, m) => s + Math.abs(m.montant), 0);
     // Crédits soldés (payés en MAD → sort de caisse)
     const creditsSoldesMAD = kpi.creditsSoldesMad ?? 0;
-    return caisseDepart + depotsMad + ventesMad - achatsMad - retraitsMad - chargesJour + alimentationsMAD - prelevementsMAD - creditsSoldesMAD;
+    // Reliquats MAD soldés aujourd'hui (remboursements reçus)
+    const reliquatsMADSoldes = getMouvements()
+      .filter((m) => m.type === 'RELIQUAT' && m.devise === 'MAD' &&
+        m.montant > 0 && dayjs(m.timestamp).format('YYYY-MM-DD') === day)
+      .reduce((s, m) => s + m.montant, 0);
+    return caisseDepart + depotsMad + ventesMad - achatsMad - retraitsMad - chargesJour + alimentationsMAD - prelevementsMAD - creditsSoldesMAD + reliquatsMADSoldes;
   }, [caisseDepart, txJour, chargesJour, day, kpi.creditsSoldesMad]);
 
   const creditsJour = useMemo(() => {
@@ -799,7 +808,7 @@ export function CaisseJour() {
                 <span className="text-sm font-bold tabular-nums text-white">{fmt(caisseFinMAD)}</span>
               </div>
               <p className="px-1 text-[10px] text-zinc-400 leading-tight">
-                = Départ + Dépôts + Ventes − Achats − Retraits − Charges + Alim. − Prél. − Crédits soldés
+                = Départ + Dépôts + Ventes − Achats − Retraits − Charges + Alim. − Prél. − Crédits soldés + Reliquats soldés
               </p>
             </CardContent>
           </Card>
