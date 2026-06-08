@@ -1,12 +1,10 @@
 import { getProSettings } from '@/lib/proSettings';
 import { getTransactions, getMouvements } from '@/lib/storage';
 import { stockDisponibleDevise } from '@/lib/calculations';
-import { getSnapshotMap } from '@/lib/stageCaisse/storage';
+import { getAllSnapshots } from '@/lib/stageCaisse/storage';
 import { fmtMad, fmtDevise } from '@/lib/formatNumbers';
 import type { TransactionType } from '@/types';
 import dayjs from 'dayjs';
-
-const CAISSE_ID = 1;
 
 export interface ControlIssue {
   level: 'error' | 'warning';
@@ -43,10 +41,15 @@ export function validateOperationControls(input: {
       asOfDay: input.dateOperation,
       mouvements: getMouvements(),
     });
-    // + départ snapshot du jour
+    // + départ snapshot — cherche le DEPART du jour de l'opération
+    // ou le plus récent avant cette date (pour saisies rétroactives)
     const today = input.dateOperation ?? dayjs().format('YYYY-MM-DD');
-    const snap = getSnapshotMap(CAISSE_ID, today, 'DEPART');
-    const departDevise = snap[input.devise] ?? 0;
+    const allSnaps = getAllSnapshots();
+    // Cherche le snapshot DEPART le plus récent ≤ dateOperation
+    const departSnaps = allSnaps
+      .filter((s) => s.type_solde === 'DEPART' && s.devise_code === input.devise && s.date_comptable <= today)
+      .sort((a, b) => b.date_comptable.localeCompare(a.date_comptable));
+    const departDevise = departSnaps[0]?.montant ?? 0;
     const dispo = stockTx + departDevise;
 
     if (input.montant > dispo + 0.0001) {
