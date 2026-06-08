@@ -406,7 +406,7 @@ export function CaisseJour() {
       chargesMad: chargesJour,
       alimentationsMad: sumMouvementsJour(mouvementsJour, day, 'ALIMENTATION', 'MAD'),
       prelevementsMad: sumMouvementsJour(mouvementsJour, day, 'PRELEVEMENT', 'MAD'),
-      creditsSoldesMad: kpi.creditsSoldesMad,
+      creditsSoldesMad: -kpi.creditsSoldesMad,
       reliquatsSoldesMad: sumMouvementsJour(mouvementsJour, day, 'RELIQUAT', 'MAD'),
     });
   }, [caisseDepart, kpi, chargesJour, mouvementsJour, day]);
@@ -796,7 +796,7 @@ export function CaisseJour() {
               </div>
               <p className="px-1 text-[10px] text-zinc-400 leading-tight">
                 = Départ + Dépôts + Ventes − Achats − Retraits − Charges + Alimentations −
-                Prélèvements + Crédits soldés + Reliquats soldés
+                Prélèvements - Crédits soldés + Reliquats soldés
               </p>
             </CardContent>
           </Card>
