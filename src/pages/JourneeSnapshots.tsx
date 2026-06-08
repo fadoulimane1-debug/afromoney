@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { DEVISES_CAISSE_V8 } from '@/lib/constants';
 import type { SnapshotType } from '@/types/stageCaisse';
-import { getSnapshotMap, upsertSnapshot, hasSnapshotType } from '@/lib/stageCaisse/storage';
+import { getSnapshotMap, upsertSnapshot } from '@/lib/stageCaisse/storage';
 import { repriseDepartDepuisVeille } from '@/lib/stageCaisse/engine';
 import { useBKAMRates } from '@/hooks/useBKAMRates';
 import { useNotify } from '@/hooks/useNotify';
@@ -91,20 +91,6 @@ export function JourneeSnapshots() {
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
 
-  // ── Auto-reprise : si le DÉPART du jour est vide, on le pré-remplit
-  //    depuis le FINAL (ou CLOTURE) de la veille dès l'ouverture de la page ──
-  useEffect(() => {
-    if (!hasSnapshotType(CAISSE_ID, day, 'DEPART')) {
-      const prev = dayjs(day).subtract(1, 'day').format('YYYY-MM-DD');
-      const hasPrevFinal   = hasSnapshotType(CAISSE_ID, prev, 'FINAL');
-      const hasPrevCloture = hasSnapshotType(CAISSE_ID, prev, 'CLOTURE');
-      if (hasPrevFinal || hasPrevCloture) {
-        repriseDepartDepuisVeille(CAISSE_ID, day, prev, DEVISES_SNAPSHOT);
-        refresh();
-      }
-    }
-  }, [day, refresh]);
-
   useEffect(() => {
     const on = () => refresh();
     window.addEventListener('afromoney-data', on);
@@ -137,6 +123,13 @@ export function JourneeSnapshots() {
     setJustSaved(true);
     setTimeout(() => setJustSaved(false), 3000);
     notify.success('Snapshots enregistrés !');
+  }
+
+  function handleRepriseVeille() {
+    const prev = dayjs(day).subtract(1, 'day').format('YYYY-MM-DD');
+    repriseDepartDepuisVeille(CAISSE_ID, day, prev, DEVISES_SNAPSHOT);
+    refresh();
+    notify.success(`Départ repris depuis le ${dayjs(prev).format('DD/MM/YYYY')}`);
   }
 
   return (
@@ -229,7 +222,15 @@ export function JourneeSnapshots() {
           </CardContent>
         </Card>
 
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            onClick={handleRepriseVeille}
+            variant="outline"
+            className="border-blue-300 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-800 hover:bg-blue-100"
+          >
+            Reprendre départ depuis la veille
+          </Button>
           <Button
             type="button"
             onClick={handleSave}
