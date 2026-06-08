@@ -162,9 +162,9 @@ export function computeStockRestantJour(
           continue;
         }
         if (t.devise !== devise) continue;
-        if (t.type === 'ACHAT')   achats  += t.montant; // achat devise → stock devise augmente
-        if (t.type === 'VENTE')   ventes  += t.montant; // vente devise → stock devise baisse
-        if (t.type === 'DEPOT')   depots  += t.montant;
+        if (t.type === 'VENTE') ventes += t.montant;
+        if (t.type === 'DEPOT') depots += t.montant;
+        if (t.type === 'ACHAT') achats += t.montant;
         if (t.type === 'RETRAIT') retraits += t.montant;
         if (t.statut === 'CRÉDIT') credits += t.montant;
       }
@@ -182,11 +182,11 @@ export function computeStockRestantJour(
 
       const restant = Math.round(
         (depart +
-          achats +        // achat devise → stock +
+          ventes +
           alimentations +
           depots +
           reliquats -
-          ventes -        // vente devise → stock -
+          achats -
           charges -
           retraits -
           prelevements -
@@ -223,6 +223,29 @@ export function computeStockRestantJour(
         r.credits > 0 ||
         Math.abs(r.restant) > 0.0001,
     );
+}
+
+/** Stock restant d'une devise pour un jour — même formule que l'écran Caisse du jour. */
+export function stockRestantDevisePourJour(
+  devise: string,
+  dayYmd: string,
+  transactions: Transaction[],
+  departByDevise: Record<string, number>,
+  mouvements: { timestamp: string; devise: string; type: string; montant: number }[] = [],
+  creditsPage: { date: string; devise: string; montant: number; statut: string }[] = [],
+): number {
+  const rows = computeStockRestantJour(
+    transactions,
+    departByDevise,
+    dayYmd,
+    [devise],
+    'ALL',
+    mouvements,
+    creditsPage,
+  );
+  const row = rows.find((r) => r.devise === devise);
+  if (row) return row.restant;
+  return departByDevise[devise] ?? 0;
 }
 
 export function calculStock(transactions: Transaction[], rates: ExchangeRate[]): Stock[] {
