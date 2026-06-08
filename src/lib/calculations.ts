@@ -103,9 +103,9 @@ function mouvementMatchesMoment(
 }
 
 /**
- * Stock restant par devise — formule caisse :
- * Départ + Ventes + Alimentations + Dépôts + Reliquats
- * − Achats − Charges − Retraits − Prélèvements − Crédits
+ * Stock restant par devise (quantités en caisse) :
+ * Départ + Achats + Alimentations + Dépôts + Reliquats soldés
+ * − Ventes − Charges − Retraits − Prélèvements − Crédits
  */
 export function computeStockRestantJour(
   transactions: Transaction[],
@@ -182,11 +182,11 @@ export function computeStockRestantJour(
 
       const restant = Math.round(
         (depart +
-          ventes +
+          achats +
           alimentations +
           depots +
           reliquats -
-          achats -
+          ventes -
           charges -
           retraits -
           prelevements -
@@ -223,6 +223,69 @@ export function computeStockRestantJour(
         r.credits > 0 ||
         Math.abs(r.restant) > 0.0001,
     );
+}
+
+/** Somme des mouvements journal caisse d'un type pour un jour (valeur absolue). */
+export function sumMouvementsJour(
+  mouvements: { timestamp: string; type: string; devise: string; montant: number }[],
+  dayYmd: string,
+  type: string,
+  devise = 'MAD',
+): number {
+  return mouvements
+    .filter(
+      (m) =>
+        dayjs(m.timestamp).format('YYYY-MM-DD') === dayYmd &&
+        m.type === type &&
+        m.devise === devise,
+    )
+    .reduce((s, m) => s + Math.abs(m.montant), 0);
+}
+
+/**
+ * Caisse MAD durant la journée :
+ * Départ + Dépôts + Ventes − Achats − Retraits − Charges
+ * + Alimentations − Prélèvements + Crédits soldés + Reliquats soldés
+ */
+export function computeCaisseDurantJourneeMad(input: {
+  departMad: number;
+  depotsMad: number;
+  ventesMad: number;
+  achatsMad: number;
+  retraitsMad: number;
+  chargesMad: number;
+  alimentationsMad: number;
+  prelevementsMad: number;
+  creditsSoldesMad: number;
+  reliquatsSoldesMad: number;
+}): number {
+  const {
+    departMad,
+    depotsMad,
+    ventesMad,
+    achatsMad,
+    retraitsMad,
+    chargesMad,
+    alimentationsMad,
+    prelevementsMad,
+    creditsSoldesMad,
+    reliquatsSoldesMad,
+  } = input;
+  return (
+    Math.round(
+      (departMad +
+        depotsMad +
+        ventesMad -
+        achatsMad -
+        retraitsMad -
+        chargesMad +
+        alimentationsMad -
+        prelevementsMad +
+        creditsSoldesMad +
+        reliquatsSoldesMad) *
+        100,
+    ) / 100
+  );
 }
 
 /** Stock restant d'une devise pour un jour — même formule que l'écran Caisse du jour. */
