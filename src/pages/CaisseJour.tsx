@@ -24,6 +24,8 @@ import { fmt, fmtRate } from '@/lib/formatNumbers';
 import {
   montantMadComptable,
   computeStockRestantJour,
+  computeCaisseDurantJourneeMad,
+  sumMouvementsJour,
   calculMontantMAD,
   type StockJourMomentFilter,
 } from '@/lib/calculations';
@@ -376,22 +378,38 @@ export function CaisseJour() {
   const kpi = useMemo(() => summarizeCaisseJourV8(transactions, dayJs), [transactions, dayJs]);
 
   const caisseDepart = useMemo(() => {
+    void dataTick;
+    const snapMad = getEffectiveDepartBalances(CAISSE_ID, day, ['MAD', ...DEVISES_CAISSE_V8]).MAD;
+    if (snapMad != null && Math.abs(snapMad) > 0.0001) return snapMad;
     const fromStore = getCaisseDepartJour(day);
     if (fromStore != null) return fromStore;
     const first = txJour.map((t) => t.caisseDepart).find((c) => c != null && c > 0);
     return first ?? 0;
-  }, [day, txJour]);
+  }, [day, txJour, dataTick]);
 
   const chargesJour = txJour
     .filter((t) => t.type === 'CHARGES')
     .reduce((s, t) => s + t.montantMAD, 0);
 
-  const caisseFinMAD =
-    caisseDepart +
-    kpi.totalDepotsMad -
-    kpi.totalRetraitsMad -
-    chargesJour +
-    kpi.creditsSoldesMad;
+  const mouvementsJour = useMemo(() => {
+    void dataTick;
+    return getMouvements().filter((m) => dayjs(m.timestamp).format('YYYY-MM-DD') === day);
+  }, [day, dataTick]);
+
+  const caisseDurantJourneeMAD = useMemo(() => {
+    return computeCaisseDurantJourneeMad({
+      departMad: caisseDepart,
+      depotsMad: kpi.totalDepotsMad,
+      ventesMad: kpi.totalVentesMad,
+      achatsMad: kpi.totalAchatsMad,
+      retraitsMad: kpi.totalRetraitsMad,
+      chargesMad: chargesJour,
+      alimentationsMad: sumMouvementsJour(mouvementsJour, day, 'ALIMENTATION', 'MAD'),
+      prelevementsMad: sumMouvementsJour(mouvementsJour, day, 'PRELEVEMENT', 'MAD'),
+      creditsSoldesMad: kpi.creditsSoldesMad,
+      reliquatsSoldesMad: sumMouvementsJour(mouvementsJour, day, 'RELIQUAT', 'MAD'),
+    });
+  }, [caisseDepart, kpi, chargesJour, mouvementsJour, day]);
 
   const creditsJour = useMemo(() => {
     void dataTick;
@@ -472,8 +490,8 @@ export function CaisseJour() {
           <div>
             <h2 className="text-sm font-bold text-zinc-900">Stock restant par devise</h2>
             <p className="text-xs text-zinc-500">
-              Départ + Ventes + Alimentations + Dépôts + Reliquats − Achats − Charges − Retraits −
-              Prélèvements − Crédits
+              Départ + Achats + Alimentations + Dépôts + Reliquats soldés − Ventes − Charges −
+              Retraits − Prélèvements − Crédits
             </p>
           </div>
           <div className="flex flex-wrap gap-1 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 text-[11px]">
@@ -538,22 +556,24 @@ export function CaisseJour() {
                   </div>
                   <div className="mt-0.5 text-[11px] tabular-nums text-zinc-500">≈ {fmt(mad)} MAD</div>
                   {(r.depart > 0 ||
+                    r.achats > 0 ||
                     r.ventes > 0 ||
                     r.depots > 0 ||
                     r.alimentations > 0 ||
                     r.reliquats > 0 ||
+                    r.retraits > 0 ||
                     r.credits > 0) && (
                     <div className="mt-2 text-[10px] leading-relaxed text-zinc-400">
                       {r.depart > 0 && <span>Départ {fmt(r.depart)} </span>}
-                      {r.ventes > 0 && <span>· Vte {fmt(r.ventes)} </span>}
-                      {r.alimentations > 0 && <span>· Alim. {fmt(r.alimentations)} </span>}
-                      {r.depots > 0 && <span>· Dép. {fmt(r.depots)} </span>}
-                      {r.reliquats > 0 && <span>· Rel. +{fmt(r.reliquats)} </span>}
-                      {r.achats > 0 && <span>· Ach. {fmt(r.achats)} </span>}
+                      {r.achats > 0 && <span>· +Ach. {fmt(r.achats)} </span>}
+                      {r.ventes > 0 && <span>· −Vte {fmt(r.ventes)} </span>}
+                      {r.alimentations > 0 && <span>· +Alim. {fmt(r.alimentations)} </span>}
+                      {r.depots > 0 && <span>· +Dép. {fmt(r.depots)} </span>}
+                      {r.reliquats > 0 && <span>· +Rel. soldés {fmt(r.reliquats)} </span>}
                       {r.charges > 0 && <span>· Chg. {fmt(r.charges)} </span>}
-                      {r.retraits > 0 && <span>· Ret. {fmt(r.retraits)} </span>}
-                      {r.prelevements > 0 && <span>· Prél. {fmt(r.prelevements)} </span>}
-                      {r.credits > 0 && <span>· Créd. {fmt(r.credits)}</span>}
+                      {r.retraits > 0 && <span>· −Ret. {fmt(r.retraits)} </span>}
+                      {r.prelevements > 0 && <span>· −Prél. {fmt(r.prelevements)} </span>}
+                      {r.credits > 0 && <span>· −Créd. {fmt(r.credits)}</span>}
                     </div>
                   )}
                 </div>
@@ -767,32 +787,16 @@ export function CaisseJour() {
                 <span className="font-semibold tabular-nums text-emerald-700">+{fmt(kpi.creditsSoldesMad)}</span>
               </div>
 
-              <div className="border-t border-zinc-200 pt-2 mt-1" />
-
-              {/* Bénéfice estimé */}
-              <div className="flex justify-between gap-2 rounded-md px-2 py-2 bg-zinc-50">
-                <span className="text-xs font-semibold text-zinc-700">Bénéfice estimé</span>
-                <span
-                  className={`font-bold tabular-nums text-sm ${
-                    kpi.beneficeEstime >= 0 ? 'text-emerald-700' : 'text-red-600'
-                  }`}
-                >
-                  {fmt(kpi.beneficeEstime)}
-                </span>
-              </div>
-              <p className="px-2 text-[10px] text-zinc-400 leading-tight">
-                = Ventes − Achats − Charges
-              </p>
-
               <div className="border-t-2 border-blue-300 pt-3 mt-2" />
 
-              {/* Caisse fin */}
+              {/* Caisse durant la journée */}
               <div className="flex justify-between gap-2 rounded-lg bg-blue-600 px-3 py-3">
-                <span className="text-xs font-bold text-blue-100">Caisse fin de journée (estim.)</span>
-                <span className="text-sm font-bold tabular-nums text-white">{fmt(caisseFinMAD)}</span>
+                <span className="text-xs font-bold text-blue-100">Caisse durant la journée</span>
+                <span className="text-sm font-bold tabular-nums text-white">{fmt(caisseDurantJourneeMAD)}</span>
               </div>
               <p className="px-1 text-[10px] text-zinc-400 leading-tight">
-                = Départ + Dépôts − Retraits − Charges + Crédits soldés
+                = Départ + Dépôts + Ventes − Achats − Retraits − Charges + Alimentations −
+                Prélèvements + Crédits soldés + Reliquats soldés
               </p>
             </CardContent>
           </Card>
