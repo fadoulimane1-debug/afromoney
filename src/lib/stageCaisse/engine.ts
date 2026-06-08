@@ -145,3 +145,15 @@ export function repriseDepartDepuisVeille(
   const bal = computeBalancesAfterMorningAdjusts(caisseId, dateJ, devises);
   writeSnapshotGroup(caisseId, dateJ, 'DEPART', bal, devises);
 }
+
+/** Crée le snapshot DÉPART s'il manque (saisie rétroactive). Retourne true si créé. */
+export function ensureDepartSnapshotForDay(
+  caisseId: number,
+  date: string,
+  devises: string[],
+): boolean {
+  if (hasSnapshotType(caisseId, date, 'DEPART')) return false;
+  const prev = dayjs(date).subtract(1, 'day').format('YYYY-MM-DD');
+  repriseDepartDepuisVeille(caisseId, date, prev, devises);
+  return true;
+}
