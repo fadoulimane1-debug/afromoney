@@ -28,7 +28,8 @@ import {
   type StockJourMomentFilter,
 } from '@/lib/calculations';
 import { DEVISES_CAISSE_V8, TAUX_PAR_DEFAUT } from '@/lib/constants';
-import { getSnapshotMap, hasSnapshotType } from '@/lib/stageCaisse/storage';
+import { hasSnapshotType } from '@/lib/stageCaisse/storage';
+import { getEffectiveDepartBalances } from '@/lib/stageCaisse/engine';
 
 dayjs.locale('fr');
 
@@ -375,10 +376,6 @@ export function CaisseJour() {
   const kpi = useMemo(() => summarizeCaisseJourV8(transactions, dayJs), [transactions, dayJs]);
 
   const caisseDepart = useMemo(() => {
-    // Priorité : snapshot DEPART du journal-journee (saisi le matin)
-    const snap = getSnapshotMap(CAISSE_ID, day, 'DEPART');
-    if (snap['MAD'] != null && snap['MAD'] > 0) return snap['MAD'];
-    // Fallback : ancien système
     const fromStore = getCaisseDepartJour(day);
     if (fromStore != null) return fromStore;
     const first = txJour.map((t) => t.caisseDepart).find((c) => c != null && c > 0);
@@ -389,42 +386,12 @@ export function CaisseJour() {
     .filter((t) => t.type === 'CHARGES')
     .reduce((s, t) => s + t.montantMAD, 0);
 
-  // Caisse MAD durant la journée :
-  // Départ + Dépôts MAD + Ventes (encaisse MAD) − Achats (débite MAD) − Retraits MAD − Charges + Alimentations MAD − Prélèvements MAD − Crédits soldés + Reliquats soldés
-  const caisseFinMAD = useMemo(() => {
-    // Ventes payées → encaisse MAD
-    const ventesMad = txJour
-      .filter((t) => t.type === 'VENTE' && t.statut === 'PAYÉ' && t.devise !== 'MAD')
-      .reduce((s, t) => s + t.montantMAD, 0);
-    // Achats payés → débite MAD
-    const achatsMad = txJour
-      .filter((t) => t.type === 'ACHAT' && t.statut !== 'CRÉDIT')
-      .reduce((s, t) => s + t.montantMAD, 0);
-    // Dépôts MAD payés
-    const depotsMad = txJour
-      .filter((t) => t.type === 'DEPOT' && t.devise === 'MAD' && t.statut === 'PAYÉ')
-      .reduce((s, t) => s + t.montant, 0);
-    // Retraits MAD
-    const retraitsMad = txJour
-      .filter((t) => t.type === 'RETRAIT' && t.devise === 'MAD')
-      .reduce((s, t) => s + t.montant, 0);
-    // Alimentations MAD
-    const alimentationsMAD = getMouvements()
-      .filter((m) => m.type === 'ALIMENTATION' && m.devise === 'MAD' && dayjs(m.timestamp).format('YYYY-MM-DD') === day)
-      .reduce((s, m) => s + Math.abs(m.montant), 0);
-    // Prélèvements MAD
-    const prelevementsMAD = getMouvements()
-      .filter((m) => m.type === 'PRELEVEMENT' && m.devise === 'MAD' && dayjs(m.timestamp).format('YYYY-MM-DD') === day)
-      .reduce((s, m) => s + Math.abs(m.montant), 0);
-    // Crédits soldés (payés en MAD → sort de caisse)
-    const creditsSoldesMAD = kpi.creditsSoldesMad ?? 0;
-    // Reliquats MAD soldés aujourd'hui (remboursements reçus)
-    const reliquatsMADSoldes = getMouvements()
-      .filter((m) => m.type === 'RELIQUAT' && m.devise === 'MAD' &&
-        m.montant > 0 && dayjs(m.timestamp).format('YYYY-MM-DD') === day)
-      .reduce((s, m) => s + m.montant, 0);
-    return caisseDepart + depotsMad + ventesMad - achatsMad - retraitsMad - chargesJour + alimentationsMAD - prelevementsMAD - creditsSoldesMAD + reliquatsMADSoldes;
-  }, [caisseDepart, txJour, chargesJour, day, kpi.creditsSoldesMad]);
+  const caisseFinMAD =
+    caisseDepart +
+    kpi.totalDepotsMad -
+    kpi.totalRetraitsMad -
+    chargesJour +
+    kpi.creditsSoldesMad;
 
   const creditsJour = useMemo(() => {
     void dataTick;
@@ -440,10 +407,10 @@ export function CaisseJour() {
 
   const departDevises = useMemo(() => {
     void dataTick;
-    const snap = getSnapshotMap(CAISSE_ID, day, 'DEPART');
+    const bal = getEffectiveDepartBalances(CAISSE_ID, day, [...DEVISES_CAISSE_V8]);
     const out: Record<string, number> = {};
     for (const d of DEVISES_CAISSE_V8) {
-      if (snap[d] != null) out[d] = snap[d];
+      out[d] = bal[d] ?? 0;
     }
     return out;
   }, [day, dataTick]);
@@ -505,7 +472,7 @@ export function CaisseJour() {
           <div>
             <h2 className="text-sm font-bold text-zinc-900">Stock restant par devise</h2>
             <p className="text-xs text-zinc-500">
-              Départ + Achats + Alimentations + Dépôts + Reliquats − Ventes − Charges − Retraits −
+              Départ + Ventes + Alimentations + Dépôts + Reliquats − Achats − Charges − Retraits −
               Prélèvements − Crédits
             </p>
           </div>
@@ -534,17 +501,19 @@ export function CaisseJour() {
           </div>
         </div>
 
-        {!hasSnapshotType(CAISSE_ID, day, 'DEPART') && departDevises && Object.keys(departDevises).length === 0 && (
+        {!hasSnapshotType(CAISSE_ID, day, 'DEPART') && (
           <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            Aucun snapshot <strong>DÉPART</strong> pour ce jour — enregistrez l&apos;ouverture dans{' '}
+            Aucun snapshot <strong>DÉPART</strong> saisi pour ce jour — le stock part de <strong>0</strong>{' '}
+            (d&apos;où les montants négatifs). Allez dans{' '}
             <button
               type="button"
               className="font-semibold underline"
-              onClick={() => navigate('/journee-snapshots')}
+              onClick={() => navigate('/journal-journee')}
             >
-              Snapshots journée
-            </button>
-            .
+              OUVERTURE (8h)
+            </button>{' '}
+            → date {dayjs(day).format('DD/MM/YYYY')} → cliquez{' '}
+            <strong>Reprendre départ depuis la veille</strong> ou saisissez les soldes à la main.
           </p>
         )}
 
@@ -800,15 +769,30 @@ export function CaisseJour() {
 
               <div className="border-t border-zinc-200 pt-2 mt-1" />
 
+              {/* Bénéfice estimé */}
+              <div className="flex justify-between gap-2 rounded-md px-2 py-2 bg-zinc-50">
+                <span className="text-xs font-semibold text-zinc-700">Bénéfice estimé</span>
+                <span
+                  className={`font-bold tabular-nums text-sm ${
+                    kpi.beneficeEstime >= 0 ? 'text-emerald-700' : 'text-red-600'
+                  }`}
+                >
+                  {fmt(kpi.beneficeEstime)}
+                </span>
+              </div>
+              <p className="px-2 text-[10px] text-zinc-400 leading-tight">
+                = Ventes − Achats − Charges
+              </p>
+
               <div className="border-t-2 border-blue-300 pt-3 mt-2" />
 
-              {/* Caisse durant la journée */}
+              {/* Caisse fin */}
               <div className="flex justify-between gap-2 rounded-lg bg-blue-600 px-3 py-3">
-                <span className="text-xs font-bold text-blue-100">Caisse durant la journée</span>
+                <span className="text-xs font-bold text-blue-100">Caisse fin de journée (estim.)</span>
                 <span className="text-sm font-bold tabular-nums text-white">{fmt(caisseFinMAD)}</span>
               </div>
               <p className="px-1 text-[10px] text-zinc-400 leading-tight">
-                = Départ + Dépôts + Ventes − Achats − Retraits − Charges + Alim. − Prél. − Crédits soldés + Reliquats soldés
+                = Départ + Dépôts − Retraits − Charges + Crédits soldés
               </p>
             </CardContent>
           </Card>
