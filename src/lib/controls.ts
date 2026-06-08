@@ -1,8 +1,12 @@
 import { getProSettings } from '@/lib/proSettings';
 import { getTransactions, getMouvements } from '@/lib/storage';
 import { stockDisponibleDevise } from '@/lib/calculations';
+import { getSnapshotMap } from '@/lib/stageCaisse/storage';
 import { fmtMad, fmtDevise } from '@/lib/formatNumbers';
 import type { TransactionType } from '@/types';
+import dayjs from 'dayjs';
+
+const CAISSE_ID = 1;
 
 export interface ControlIssue {
   level: 'error' | 'warning';
@@ -15,7 +19,6 @@ export function validateOperationControls(input: {
   montant: number;
   montantMAD: number;
   note: string;
-  /** Date de l'opération (YYYY-MM-DD) — stock calculé à cette date (saisie rétroactive). */
   dateOperation?: string;
 }): ControlIssue[] {
   const s = getProSettings();
@@ -35,10 +38,17 @@ export function validateOperationControls(input: {
   }
 
   if (input.type === 'VENTE' && input.devise !== 'MAD' && s.bloquerVenteStockInsuffisant) {
-    const dispo = stockDisponibleDevise(input.devise, getTransactions(), {
+    // Stock depuis transactions + mouvements
+    const stockTx = stockDisponibleDevise(input.devise, getTransactions(), {
       asOfDay: input.dateOperation,
       mouvements: getMouvements(),
     });
+    // + départ snapshot du jour
+    const today = input.dateOperation ?? dayjs().format('YYYY-MM-DD');
+    const snap = getSnapshotMap(CAISSE_ID, today, 'DEPART');
+    const departDevise = snap[input.devise] ?? 0;
+    const dispo = stockTx + departDevise;
+
     if (input.montant > dispo + 0.0001) {
       issues.push({
         level: 'error',
