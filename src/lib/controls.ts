@@ -1,10 +1,14 @@
 import { getProSettings } from '@/lib/proSettings';
 import { getTransactions, getMouvements } from '@/lib/storage';
-import { stockDisponibleDevise } from '@/lib/calculations';
-import { getAllSnapshots } from '@/lib/stageCaisse/storage';
+import { stockRestantDevisePourJour } from '@/lib/calculations';
+import { loadCredits } from '@/lib/credits';
+import { ensureDepartSnapshotForDay, getEffectiveDepartBalances } from '@/lib/stageCaisse/engine';
+import { DEVISES_CAISSE_V8 } from '@/lib/constants';
 import { fmtMad, fmtDevise } from '@/lib/formatNumbers';
 import type { TransactionType } from '@/types';
 import dayjs from 'dayjs';
+
+const CAISSE_ID = 1;
 
 export interface ControlIssue {
   level: 'error' | 'warning';
@@ -17,6 +21,7 @@ export function validateOperationControls(input: {
   montant: number;
   montantMAD: number;
   note: string;
+  /** Date de l'opération (YYYY-MM-DD) — stock du jour à cette date. */
   dateOperation?: string;
 }): ControlIssue[] {
   const s = getProSettings();
@@ -36,26 +41,31 @@ export function validateOperationControls(input: {
   }
 
   if (input.type === 'VENTE' && input.devise !== 'MAD' && s.bloquerVenteStockInsuffisant) {
-    // Stock depuis transactions + mouvements
-    const stockTx = stockDisponibleDevise(input.devise, getTransactions(), {
-      asOfDay: input.dateOperation,
-      mouvements: getMouvements(),
-    });
-    // + départ snapshot — cherche le DEPART du jour de l'opération
-    // ou le plus récent avant cette date (pour saisies rétroactives)
-    const today = input.dateOperation ?? dayjs().format('YYYY-MM-DD');
-    const allSnaps = getAllSnapshots();
-    // Cherche le snapshot DEPART le plus récent ≤ dateOperation
-    const departSnaps = allSnaps
-      .filter((s) => s.type_solde === 'DEPART' && s.devise_code === input.devise && s.date_comptable <= today)
-      .sort((a, b) => b.date_comptable.localeCompare(a.date_comptable));
-    const departDevise = departSnaps[0]?.montant ?? 0;
-    const dispo = stockTx + departDevise;
+    const day = input.dateOperation ?? dayjs().format('YYYY-MM-DD');
+    const devisesSnapshot = ['MAD', ...DEVISES_CAISSE_V8];
+    ensureDepartSnapshotForDay(CAISSE_ID, day, devisesSnapshot);
+    const departBal = getEffectiveDepartBalances(CAISSE_ID, day, [...DEVISES_CAISSE_V8]);
+    const departByDevise: Record<string, number> = {};
+    for (const d of DEVISES_CAISSE_V8) {
+      departByDevise[d] = departBal[d] ?? 0;
+    }
+
+    const dispo = stockRestantDevisePourJour(
+      input.devise,
+      day,
+      getTransactions(),
+      departByDevise,
+      getMouvements(),
+      loadCredits(),
+    );
 
     if (input.montant > dispo + 0.0001) {
+      const jourPasse = dayjs(day).isBefore(dayjs(), 'day');
       issues.push({
-        level: 'error',
-        message: `Stock ${input.devise} insuffisant (disponible : ${fmtDevise(dispo)}).`,
+        level: jourPasse ? 'warning' : 'error',
+        message: jourPasse
+          ? `Stock ${input.devise} insuffisant pour le ${dayjs(day).format('DD/MM/YYYY')} (disponible : ${fmtDevise(dispo)}) — saisie rétroactive.`
+          : `Stock ${input.devise} insuffisant (disponible : ${fmtDevise(dispo)}).`,
       });
     }
   }
