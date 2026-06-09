@@ -47,12 +47,27 @@ export function depotRetraitMadCaisseActif(
   return tx.taux !== 1 && tx.montantMAD > 0;
 }
 
+/** Opération dont la jambe MAD entre en caisse (uniquement si PAYÉ). */
+export function operationMadCaisseActif(
+  tx: Pick<Transaction, 'type' | 'statut'>,
+): boolean {
+  if (tx.type === 'DEPOT' || tx.type === 'RETRAIT') {
+    return depotRetraitMadCaisseActif(
+      tx as Pick<Transaction, 'type' | 'statut' | 'devise' | 'montant' | 'montantMAD' | 'taux'>,
+    );
+  }
+  if (tx.type === 'ACHAT' || tx.type === 'VENTE' || tx.type === 'CHARGES') {
+    return tx.statut === 'PAYÉ';
+  }
+  return true;
+}
+
 /** Montant MAD à inclure dans bilans / caisse du jour / clôture. */
 export function montantMadComptable(
   tx: Pick<Transaction, 'type' | 'statut' | 'devise' | 'montant' | 'montantMAD' | 'taux'>,
 ): number {
+  if (!operationMadCaisseActif(tx)) return 0;
   if (tx.type === 'DEPOT' || tx.type === 'RETRAIT') {
-    if (!depotRetraitMadCaisseActif(tx)) return 0;
     return tx.devise === 'MAD' ? tx.montant : tx.montantMAD;
   }
   return tx.montantMAD;
