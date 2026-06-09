@@ -332,20 +332,16 @@ export const calculateDailyClosure = (date: string): DailyClosure => {
     transactions.filter((t) => dayjs(t.date).format('YYYY-MM-DD') === date),
   );
 
-  const sum = (type: string) =>
+  const sumMad = (type: string) =>
     dayTransactions
       .filter((t) => t.type === type)
-      .reduce((acc, t) => acc + (t.montantMAD ?? 0), 0);
+      .reduce((acc, t) => acc + montantMadComptable(t), 0);
 
-  const totalBuys        = sum('ACHAT');
-  const totalSells       = sum('VENTE');
-  const totalDeposits = dayTransactions
-    .filter((t) => t.type === 'DEPOT')
-    .reduce((acc, t) => acc + montantMadComptable(t), 0);
-  const totalWithdrawals = dayTransactions
-    .filter((t) => t.type === 'RETRAIT')
-    .reduce((acc, t) => acc + montantMadComptable(t), 0);
-  const totalCharges     = sum('CHARGES');
+  const totalBuys = sumMad('ACHAT');
+  const totalSells = sumMad('VENTE');
+  const totalDeposits = sumMad('DEPOT');
+  const totalWithdrawals = sumMad('RETRAIT');
+  const totalCharges = sumMad('CHARGES');
 
   const prevValidated = getLastValidatedClosureBefore(date);
   let initialBalanceMAD = prevValidated?.finalBalanceMAD ?? 0;
