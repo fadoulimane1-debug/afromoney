@@ -30,5 +30,10 @@ export function parseMontantStr(raw: string): number {
 }
 
 export function formatMontantFr(n: number): string {
-  return n.toLocaleString('fr-MA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!Number.isFinite(n)) return '';
+  const fixed = Math.abs(n).toFixed(2);
+  const [intPart, decPart] = fixed.split('.');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const body = `${grouped},${decPart}`;
+  return n < 0 ? `−${body}` : body;
 }
