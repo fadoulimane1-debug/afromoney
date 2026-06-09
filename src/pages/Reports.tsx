@@ -39,7 +39,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useAppData } from '@/hooks/useAppData';
-import { buildBilanAnnuelV8, type BilanMensuelV8Row } from '@/lib/bilanV8';
+import { buildBilanAnnuelV8, buildBilanJournalierMois, type BilanMensuelV8Row } from '@/lib/bilanV8';
 import {
   buildPivotMatrix,
   filterTransactionsForReport,
@@ -236,6 +236,7 @@ export function Reports() {
   const [bilanYear, setBilanYear]   = useState(() => dayjs().year());
   const [selectedMonth, setSelectedMonth] = useState(dayjs().format('YYYY-MM'));
   const [jourFilter, setJourFilter] = useState<JourFilter>('all');
+  const [beneficeJourMois, setBeneficeJourMois] = useState(dayjs().format('YYYY-MM'));
 
   const yearOptions = useMemo(() => [0, 1, 2].map((o) => dayjs().year() - o), []);
   const monthOptions = useMemo(
@@ -354,6 +355,19 @@ export function Reports() {
 
   const pivotDevise = useMemo(() => buildPivotMatrix(filteredForPivot, 'montant'), [filteredForPivot]);
   const pivotMAD    = useMemo(() => buildPivotMatrix(filteredForPivot, 'montantMAD'), [filteredForPivot]);
+
+  /* ── Bénéfice journalier ── */
+  const bilanJournalier = useMemo(
+    () => buildBilanJournalierMois(transactions, beneficeJourMois),
+    [transactions, beneficeJourMois],
+  );
+  const bilanJourTotal = useMemo(() => ({
+    achatsMad:  bilanJournalier.reduce((s, r) => s + r.achatsMad, 0),
+    ventesMad:  bilanJournalier.reduce((s, r) => s + r.ventesMad, 0),
+    chargesMad: bilanJournalier.reduce((s, r) => s + r.chargesMad, 0),
+    benefice:   bilanJournalier.reduce((s, r) => s + r.benefice, 0),
+    nbOps:      bilanJournalier.reduce((s, r) => s + r.nbOps, 0),
+  }), [bilanJournalier]);
 
   /* ── Exports ── */
   function exportExcel() {
@@ -897,6 +911,85 @@ export function Reports() {
                 <td className="px-4 py-3 text-right text-xs font-bold text-zinc-900">
                   {bilanTotal.nbOps}
                 </td>
+              </tr>
+            </tfoot>
+          </Table>
+        </div>
+      </section>
+
+      {/* ── Tableau bénéfice journalier ── */}
+      <section className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-zinc-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div>
+            <h2 className="text-base font-semibold text-zinc-900">
+              📅 Bénéfice journalier
+            </h2>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              Bénéfice = Ventes − Achats − Charges · jour par jour
+            </p>
+          </div>
+          <select
+            value={beneficeJourMois}
+            onChange={(e) => setBeneficeJourMois(e.target.value)}
+            className="h-8 rounded-md border border-zinc-300 bg-white px-2 text-xs text-zinc-900 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {Array.from({ length: 12 }, (_, i) => {
+              const m = dayjs().subtract(i, 'month').format('YYYY-MM');
+              return <option key={m} value={m}>{dayjs(m).format('MMMM YYYY')}</option>;
+            })}
+          </select>
+        </div>
+        <div className="overflow-x-auto">
+          <Table className="min-w-max text-xs">
+            <TableHeader>
+              <TableRow className="bg-zinc-50/80 hover:bg-transparent">
+                <TableHead className="sticky left-0 z-10 min-w-[90px] bg-zinc-50 font-semibold text-zinc-800">Jour</TableHead>
+                <TableHead className="text-right font-semibold text-red-700">Achats (MAD)</TableHead>
+                <TableHead className="text-right font-semibold text-teal-700">Ventes (MAD)</TableHead>
+                <TableHead className="text-right font-semibold text-zinc-600">Charges</TableHead>
+                <TableHead className="text-right font-semibold text-zinc-800">Bénéfice</TableHead>
+                <TableHead className="text-right font-semibold text-zinc-500">Nb ops</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {bilanJournalier.filter((r) => r.nbOps > 0).length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-8 text-center text-zinc-400">
+                    Aucune transaction pour {dayjs(beneficeJourMois).format('MMMM YYYY')}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                bilanJournalier.map((row, i) => {
+                  if (row.nbOps === 0) return null;
+                  return (
+                    <TableRow key={row.dateYmd} className={i % 2 === 0 ? 'bg-white' : 'bg-zinc-50/40'}>
+                      <TableCell className="sticky left-0 z-10 bg-inherit font-medium text-zinc-900 shadow-[1px_0_0_0_#e4e4e7] capitalize">
+                        {row.dateLabel}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-red-700">{fmtZero(row.achatsMad)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-teal-700">{fmtZero(row.ventesMad)}</TableCell>
+                      <TableCell className="text-right tabular-nums text-zinc-600">{fmtZero(row.chargesMad)}</TableCell>
+                      <TableCell className={`text-right font-semibold tabular-nums ${row.benefice > 0 ? 'text-emerald-700' : row.benefice < 0 ? 'text-red-600' : 'text-zinc-400'}`}>
+                        {fmtZero(row.benefice)}
+                      </TableCell>
+                      <TableCell className="text-right text-zinc-500">{row.nbOps}</TableCell>
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+            <tfoot>
+              <tr className="border-t-2 border-zinc-300 bg-zinc-100">
+                <td className="sticky left-0 z-10 bg-zinc-100 px-4 py-3 text-xs font-bold text-zinc-900 shadow-[1px_0_0_0_#d1d5db]">
+                  TOTAL {dayjs(beneficeJourMois).format('MMMM YYYY')}
+                </td>
+                <td className="px-4 py-3 text-right text-xs font-bold tabular-nums text-red-700">{fmt(bilanJourTotal.achatsMad)}</td>
+                <td className="px-4 py-3 text-right text-xs font-bold tabular-nums text-teal-700">{fmt(bilanJourTotal.ventesMad)}</td>
+                <td className="px-4 py-3 text-right text-xs font-bold tabular-nums text-zinc-700">{fmt(bilanJourTotal.chargesMad)}</td>
+                <td className={`px-4 py-3 text-right text-xs font-bold tabular-nums ${bilanJourTotal.benefice >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                  {fmt(bilanJourTotal.benefice)}
+                </td>
+                <td className="px-4 py-3 text-right text-xs font-bold text-zinc-900">{bilanJourTotal.nbOps}</td>
               </tr>
             </tfoot>
           </Table>
