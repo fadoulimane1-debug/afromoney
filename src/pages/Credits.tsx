@@ -29,7 +29,8 @@ import {
   type CreditStatut,
 } from '@/lib/credits';
 import { enrichCreditAging, AGING_LABELS, type AgingBucket } from '@/lib/creditAging';
-import { fmt, fmtRate, formatMontantFr } from '@/lib/formatNumbers';
+import { fmt, fmtRate } from '@/lib/formatNumbers';
+import { parseMontantStr } from '@/lib/parseMontant';
 
 dayjs.locale('fr');
 
@@ -241,12 +242,12 @@ export function Credits() {
     setForm((f) => ({ ...f, taux: String(t) }));
   }, [form.devise]);
 
-  /* Auto-calc contre_val_mad */
+  /* Auto-calc contre_val_mad (nombre brut, pas de chaîne formatée) */
   useEffect(() => {
-    const m = parseFloat(form.montant);
-    const t = parseFloat(form.taux);
+    const m = parseMontantStr(form.montant);
+    const t = parseMontantStr(form.taux);
     if (Number.isFinite(m) && Number.isFinite(t) && m > 0 && t > 0) {
-      setForm((f) => ({ ...f, contre_val_mad: formatMontantFr(m * t) }));
+      setForm((f) => ({ ...f, contre_val_mad: String(Math.round(m * t * 100) / 100) }));
     } else {
       setForm((f) => ({ ...f, contre_val_mad: '' }));
     }
@@ -273,20 +274,8 @@ export function Credits() {
       return;
     }
 
-    // Parser le montant en gérant le point comme séparateur de milliers
-    // Ex: "50.000" → 50000 (pas 50)
-    function parseMontantInput(raw: string): number {
-      let s = raw.trim().replace(/\s/g, '');
-      if (!s.includes(',') && /^\d{1,3}(\.\d{3})+$/.test(s)) {
-        s = s.replace(/\./g, ''); // "50.000" → "50000"
-      } else {
-        s = s.replace(',', '.'); // "50,5" → "50.5"
-      }
-      return parseFloat(s);
-    }
-
-    const m = parseMontantInput(form.montant);
-    const t = parseMontantInput(form.taux);
+    const m = parseMontantStr(form.montant);
+    const t = parseMontantStr(form.taux);
     const newCredit: Credit = {
       id: newEntityId('credit'),
       date: form.date,
@@ -294,7 +283,10 @@ export function Credits() {
       devise: form.devise,
       montant: m,
       taux: t,
-      contre_val_mad: form.contre_val_mad !== '' ? parseMontantInput(form.contre_val_mad) : m * t,
+      contre_val_mad:
+        form.contre_val_mad !== ''
+          ? Math.round(parseFloat(form.contre_val_mad) * 100) / 100
+          : Math.round(m * t * 100) / 100,
       note: form.note.trim(),
       statut: form.statut,
       echeance: form.echeance || undefined,
@@ -370,9 +362,9 @@ export function Credits() {
   }));
 
   const montantPreview = (() => {
-    const m = parseFloat(form.montant);
-    const t = parseFloat(form.taux);
-    return Number.isFinite(m) && Number.isFinite(t) && m > 0 ? m * t : null;
+    const m = parseMontantStr(form.montant);
+    const t = parseMontantStr(form.taux);
+    return Number.isFinite(m) && Number.isFinite(t) && m > 0 && t > 0 ? m * t : null;
   })();
 
   return (
@@ -567,7 +559,7 @@ export function Credits() {
                   <Input
                     type="text"
                     readOnly
-                    value={form.contre_val_mad !== '' ? fmt(parseFloat(form.contre_val_mad)) : '—'}
+                    value={form.contre_val_mad !== '' ? fmt(Number(form.contre_val_mad)) : '—'}
                     className="cursor-default border-zinc-200 bg-zinc-50 text-right font-bold tabular-nums text-zinc-900"
                   />
                 </div>
@@ -614,13 +606,13 @@ export function Credits() {
               <div className="mt-3 flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-2.5 text-sm">
                 <span className="font-medium text-blue-800">{form.nom}</span>
                 <span className="text-blue-600">
-                  {parseFloat(form.montant || '0').toLocaleString('fr-MA')} {form.devise}
+                  {fmt(parseMontantStr(form.montant || '0') || 0, 0)} {form.devise}
                 </span>
                 <span className="text-zinc-400">×</span>
-                <span className="text-blue-600">{fmtRate(parseFloat(form.taux || '0'))}</span>
+                <span className="text-blue-600">{fmtRate(parseMontantStr(form.taux || '0') || 0)}</span>
                 <span className="text-zinc-400">=</span>
                 <span className="font-bold text-blue-900">
-                  {montantPreview.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                  {fmt(montantPreview)} MAD
                 </span>
                 <StatutBadge statut={form.statut} />
               </div>
