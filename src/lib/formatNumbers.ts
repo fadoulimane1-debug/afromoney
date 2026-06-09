@@ -1,16 +1,18 @@
 /**
- * Formatage unifié des montants — séparateur de milliers (locale fr-MA).
+ * Formatage unifié — milliers : espace · décimales : virgule.
+ * Ex. 42320 → « 42 320,00 »
  */
 export { parseMontantStr, formatMontantFr } from '@/lib/parseMontant';
 
-const LOCALE = 'fr-MA';
-
 export function fmtNumber(n: number, decimals = 2): string {
   if (!Number.isFinite(n)) return '—';
-  return new Intl.NumberFormat(LOCALE, {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(n);
+  const neg = n < 0;
+  const abs = Math.abs(n);
+  const fixed = abs.toFixed(decimals);
+  const [intPart, decPart] = fixed.split('.');
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  const body = decimals > 0 ? `${grouped},${decPart}` : grouped;
+  return neg ? `−${body}` : body;
 }
 
 /** Montants MAD (2 décimales, séparateur milliers). */
