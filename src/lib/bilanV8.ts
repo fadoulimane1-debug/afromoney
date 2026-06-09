@@ -40,6 +40,49 @@ export interface BilanMensuelV8Row {
   nbOps: number;
 }
 
+/** Une ligne du tableau bénéfice journalier. */
+export interface BilanJourRow {
+  jour: number;          // 1-31
+  dateLabel: string;     // ex: "Lun 02"
+  dateYmd: string;       // ex: "2026-06-02"
+  achatsMad: number;
+  ventesMad: number;
+  chargesMad: number;
+  benefice: number;
+  nbOps: number;
+}
+
+/** Bénéfice jour par jour pour un mois donné (format "YYYY-MM"). */
+export function buildBilanJournalierMois(
+  transactions: Transaction[],
+  moisYm: string, // ex: "2026-06"
+): BilanJourRow[] {
+  const d = dayjs(moisYm);
+  const nbJours = d.daysInMonth();
+  const rows: BilanJourRow[] = [];
+  for (let j = 1; j <= nbJours; j++) {
+    const dateYmd = d.date(j).format('YYYY-MM-DD');
+    const txJ = filterTransactionsComptables(
+      transactions.filter((t) => dayjs(t.date).format('YYYY-MM-DD') === dateYmd),
+    );
+    const achatsMad  = sumMontantMadForType(txJ, 'ACHAT');
+    const ventesMad  = sumMontantMadForType(txJ, 'VENTE');
+    const chargesMad = sumMontantMadForType(txJ, 'CHARGES');
+    const benefice   = ventesMad - achatsMad - chargesMad;
+    rows.push({
+      jour: j,
+      dateLabel: d.date(j).locale('fr').format('ddd DD'),
+      dateYmd,
+      achatsMad,
+      ventesMad,
+      chargesMad,
+      benefice,
+      nbOps: txJ.length,
+    });
+  }
+  return rows;
+}
+
 /** 12 mois pour une année — même formules que le classeur (BÉNÉFICE = ventes − achats − charges ; marge = BÉNÉFICE / ventes). */
 export function buildBilanAnnuelV8(transactions: Transaction[], year: number): BilanMensuelV8Row[] {
   return MOIS_FR.map((nom, i) => {
