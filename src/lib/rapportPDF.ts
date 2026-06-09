@@ -132,8 +132,8 @@ function evolutionPoints(closure: DailyClosure, txDay: Transaction[]): number[] 
   let balance = closure.initialBalanceMAD;
   const pts = [balance];
   for (const t of sorted) {
-    if (t.type === 'ACHAT') balance -= t.montantMAD;
-    else if (t.type === 'VENTE') balance += t.montantMAD;
+    if (t.type === 'ACHAT') balance -= montantMadComptable(t);
+    else if (t.type === 'VENTE') balance += montantMadComptable(t);
     else if (t.type === 'DEPOT') balance += montantMadComptable(t);
     else if (t.type === 'RETRAIT' || t.type === 'CHARGES') {
       balance -= t.type === 'CHARGES' ? t.montantMAD : montantMadComptable(t);
