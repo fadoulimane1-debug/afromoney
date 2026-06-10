@@ -473,21 +473,8 @@ export const addReliquat = (r: Omit<Reliquat, 'id' | 'dateMaj' | 'versements'>):
   };
   list.push(newR);
   saveReliquats(list);
-
-  // Si reliquat MAD → le bureau a sorti du MAD → ça réduit la caisse MAD
-  // On enregistre le mouvement pour traçabilité
-  if (r.devise === 'MAD') {
-    appendMouvement({
-      timestamp: new Date().toISOString(),
-      type: 'RELIQUAT',
-      devise: 'MAD',
-      montant: -r.montantInitial, // sortie MAD de la caisse (prêt au client)
-      operationRef: newR.id,
-      caissier: getCurrentUser()?.nom ?? 'Système',
-      note: `Reliquat créé — client: ${r.client}`,
-    });
-  }
-
+  // Reliquat = traçabilité uniquement — pas d'impact caisse à la création
+  // L'impact caisse arrive uniquement lors du versement (soldé)
   return newR;
 };
 
