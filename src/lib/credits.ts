@@ -12,6 +12,8 @@ export interface Credit {
   montant: number;
   taux: number;
   contre_val_mad: number;
+  /** Montant restant dû (MAD) — réduit à chaque paiement partiel */
+  montantRestant: number;
   note: string;
   statut: CreditStatut;
   echeance?: string;
@@ -31,7 +33,12 @@ function emitCreditsChanged() {
 export function loadCredits(): Credit[] {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    return raw ? (JSON.parse(raw) as Credit[]) : [];
+    const list = raw ? (JSON.parse(raw) as Credit[]) : [];
+    // Normalise les anciens crédits sans montantRestant
+    return list.map((c) => ({
+      ...c,
+      montantRestant: c.montantRestant ?? c.contre_val_mad,
+    }));
   } catch {
     return [];
   }
@@ -60,9 +67,12 @@ export function sumCreditsSoldesMad(day: string): number {
 }
 
 /**
- * Marque un crédit payé : enregistre la date de solde + dépôt MAD au journal caisse.
+ * Paiement partiel ou total d'un crédit.
+ * montantPaye = montant payé aujourd'hui (MAD)
+ * Si montantPaye >= montantRestant → statut Payé
+ * Sinon → reste En cours avec montantRestant réduit
  */
-export function settleCredit(id: string): Credit | null {
+export function settleCredit(id: string, montantPaye?: number): Credit | null {
   const list = loadCredits();
   const idx = list.findIndex((c) => c.id === id);
   if (idx === -1) return null;
@@ -70,17 +80,31 @@ export function settleCredit(id: string): Credit | null {
   if (c.statut === 'Payé') return c;
 
   const today = dayjs().format('YYYY-MM-DD');
-  const updated: Credit = { ...c, statut: 'Payé', dateSolde: today };
+  const restant = c.montantRestant ?? c.contre_val_mad;
+  const paye = montantPaye != null ? Math.min(montantPaye, restant) : restant;
+  const nouveauRestant = Math.max(0, Math.round((restant - paye) * 100) / 100);
+
+  const updated: Credit = {
+    ...c,
+    montantRestant: nouveauRestant,
+    statut: nouveauRestant <= 0 ? 'Payé' : 'En cours',
+    dateSolde: nouveauRestant <= 0 ? today : undefined,
+  };
   list[idx] = updated;
   saveCredits(list);
 
+  // Dépôt MAD uniquement du montant payé aujourd'hui
   appendDepotCaisse({
-    montant: updated.contre_val_mad,
+    montant: paye,
     operationRef: updated.id,
     caissier: 'Crédit soldé',
-    note: `Crédit soldé — ${updated.nom}`,
+    note: `Crédit ${nouveauRestant <= 0 ? 'soldé' : 'partiel'} — ${updated.nom} · payé ${paye} MAD`,
   });
 
-  logAudit(AUDIT_ACTIONS.CREDIT_UPDATE, { id, action: 'marquerPayé', montantMAD: updated.contre_val_mad }, today);
+  logAudit(
+    AUDIT_ACTIONS.CREDIT_UPDATE,
+    { id, action: 'paiement', montantPaye: paye, restant: nouveauRestant },
+    today,
+  );
   return updated;
 }
