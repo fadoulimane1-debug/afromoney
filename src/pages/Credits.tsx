@@ -231,6 +231,10 @@ export function Credits() {
   // Confirm delete
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
+  // Paiement partiel
+  const [paiementPartielId, setPaiementPartielId] = useState<string | null>(null);
+  const [montantPartiel, setMontantPartiel] = useState('');
+
   /* Persist to localStorage whenever credits change */
   useEffect(() => {
     saveCredits(credits);
@@ -287,6 +291,10 @@ export function Credits() {
         form.contre_val_mad !== ''
           ? Math.round(parseFloat(form.contre_val_mad) * 100) / 100
           : Math.round(m * t * 100) / 100,
+      montantRestant:
+        form.contre_val_mad !== ''
+          ? Math.round(parseFloat(form.contre_val_mad) * 100) / 100
+          : Math.round(m * t * 100) / 100,
       note: form.note.trim(),
       statut: form.statut,
       echeance: form.echeance || undefined,
@@ -310,11 +318,16 @@ export function Credits() {
   }
 
   /* ── Actions ── */
-  function marquerPayé(id: string) {
-    const updated = settleCredit(id);
+  function marquerPayé(id: string, montant?: number) {
+    const updated = settleCredit(id, montant);
     if (!updated) return;
     setCredits(loadCredits());
-    showToast(`Crédit soldé — ${fmt(updated.contre_val_mad)} MAD ajoutés à la caisse`, true);
+    setPaiementPartielId(null);
+    setMontantPartiel('');
+    const msg = updated.statut === 'Payé'
+      ? `Crédit soldé — ${fmt(updated.contre_val_mad)} MAD`
+      : `Paiement partiel enregistré — reste ${fmt(updated.montantRestant)} MAD`;
+    showToast(msg, true);
   }
 
   function marquerRetard(id: string) {
@@ -738,6 +751,9 @@ export function Credits() {
                     <th className="px-3 py-2.5 text-right font-semibold text-zinc-700">
                       Contre-val MAD
                     </th>
+                    <th className="px-3 py-2.5 text-right font-semibold text-red-600">
+                      Restant dû
+                    </th>
                     <th className="px-3 py-2.5 text-left font-semibold text-zinc-700">Échéance</th>
                     <th className="px-3 py-2.5 text-left font-semibold text-zinc-700">Tranche</th>
                     <th className="px-3 py-2.5 text-left font-semibold text-zinc-700">Note</th>
@@ -768,6 +784,9 @@ export function Credits() {
                         </td>
                         <td className="px-3 py-2.5 text-right font-bold tabular-nums text-zinc-900">
                           {fmt(c.contre_val_mad)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-bold tabular-nums text-red-600">
+                          {c.statut === 'Payé' ? <span className="text-emerald-600">—</span> : fmt(c.montantRestant ?? c.contre_val_mad)}
                         </td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-zinc-600">
                           {c.echeance ? dayjs(c.echeance).format('DD/MM/YYYY') : '—'}
@@ -808,13 +827,38 @@ export function Credits() {
                           ) : (
                             <div className="flex items-center gap-1">
                               {c.statut !== 'Payé' && (
-                                <button
-                                  onClick={() => marquerPayé(c.id)}
-                                  title="Marquer payé"
-                                  className="flex h-6 items-center gap-1 rounded bg-emerald-100 px-2 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-200"
-                                >
-                                  <CheckCircle size={10} /> Payé
-                                </button>
+                                paiementPartielId === c.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      value={montantPartiel}
+                                      onChange={(e) => setMontantPartiel(e.target.value)}
+                                      placeholder={String(c.montantRestant ?? c.contre_val_mad)}
+                                      className="h-6 w-24 rounded border border-zinc-300 px-1 text-xs"
+                                      autoFocus
+                                    />
+                                    <button
+                                      onClick={() => marquerPayé(c.id, montantPartiel ? parseFloat(montantPartiel) : undefined)}
+                                      className="flex h-6 items-center gap-1 rounded bg-emerald-100 px-2 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-200"
+                                    >
+                                      <CheckCircle size={10} /> OK
+                                    </button>
+                                    <button
+                                      onClick={() => { setPaiementPartielId(null); setMontantPartiel(''); }}
+                                      className="flex h-6 items-center rounded bg-zinc-100 px-1 text-[10px] text-zinc-500 hover:bg-zinc-200"
+                                    >
+                                      <X size={10} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setPaiementPartielId(c.id)}
+                                    title="Cliquer pour saisir le montant payé (partiel ou total)"
+                                    className="flex h-6 items-center gap-1 rounded bg-emerald-100 px-2 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-200"
+                                  >
+                                    <CheckCircle size={10} /> Payé
+                                  </button>
+                                )
                               )}
                               {c.statut === 'En cours' && (
                                 <button
