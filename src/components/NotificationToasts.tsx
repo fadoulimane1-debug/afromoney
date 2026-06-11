@@ -83,7 +83,11 @@ function Toast({ notif }: { notif: Notification }) {
  */
 export function NotificationToasts() {
   const notifications = useNotificationStore((s) => s.notifications);
-  const unread = notifications.filter((n) => !n.read).slice(0, 5);
+  // Afficher seulement les notifications success et info en popup
+  // Les erreurs et avertissements restent dans la cloche uniquement
+  const unread = notifications
+    .filter((n) => !n.read && (n.type === 'success' || n.type === 'info'))
+    .slice(0, 5);
 
   if (unread.length === 0) return null;
 
