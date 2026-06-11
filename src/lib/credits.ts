@@ -16,8 +16,10 @@ export interface Credit {
   note: string;
   statut: CreditStatut;
   echeance?: string;
-  /** Date de règlement (YYYY-MM-DD) — alimente la caisse ce jour-là */
+  /** Date du dernier paiement */
   dateSolde?: string;
+  /** Historique des paiements partiels */
+  paiements?: { date: string; montant: number }[];
 }
 
 const LS_KEY = 'credits';
@@ -58,11 +60,12 @@ export function creditsEncours(): Credit[] {
   return loadCredits().filter((c) => c.statut !== 'Payé');
 }
 
-/** Total MAD des crédits soldés à la date indiquée (entre en caisse). */
+/** Total MAD des paiements de crédits effectués aujourd'hui (sort de caisse). */
 export function sumCreditsSoldesMad(day: string): number {
   return loadCredits()
-    .filter((c) => c.statut === 'Payé' && c.dateSolde === day)
-    .reduce((s, c) => s + c.contre_val_mad, 0);
+    .flatMap((c) => c.paiements ?? [])
+    .filter((p) => p.date === day)
+    .reduce((s, p) => s + p.montant, 0);
 }
 
 /**
@@ -87,7 +90,8 @@ export function settleCredit(id: string, montantPaye?: number): Credit | null {
     ...c,
     montantRestant: nouveauRestant,
     statut: nouveauRestant <= 0 ? 'Payé' : 'En cours',
-    dateSolde: nouveauRestant <= 0 ? today : undefined,
+    dateSolde: today,
+    paiements: [...(c.paiements ?? []), { date: today, montant: paye }],
   };
   list[idx] = updated;
   saveCredits(list);
