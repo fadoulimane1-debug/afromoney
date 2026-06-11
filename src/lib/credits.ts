@@ -1,5 +1,4 @@
 import dayjs from 'dayjs';
-import { appendDepotCaisse } from '@/lib/storage';
 import { logAudit, AUDIT_ACTIONS } from '@/lib/auditLog';
 
 export type CreditStatut = 'En cours' | 'Payé' | 'Retard';
@@ -92,14 +91,6 @@ export function settleCredit(id: string, montantPaye?: number): Credit | null {
   };
   list[idx] = updated;
   saveCredits(list);
-
-  // Dépôt MAD uniquement du montant payé aujourd'hui
-  appendDepotCaisse({
-    montant: paye,
-    operationRef: updated.id,
-    caissier: 'Crédit soldé',
-    note: `Crédit ${nouveauRestant <= 0 ? 'soldé' : 'partiel'} — ${updated.nom} · payé ${paye} MAD`,
-  });
 
   logAudit(
     AUDIT_ACTIONS.CREDIT_UPDATE,
