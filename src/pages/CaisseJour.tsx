@@ -397,6 +397,12 @@ export function CaisseJour() {
   }, [day, dataTick]);
 
   const caisseDurantJourneeMAD = useMemo(() => {
+    // Lire les paiements de crédits du jour directement depuis localStorage
+    const creditsPaiementsJour = loadCredits()
+      .flatMap((c) => c.paiements ?? [])
+      .filter((p) => p.date === day)
+      .reduce((s, p) => s + p.montant, 0);
+
     return computeCaisseDurantJourneeMad({
       departMad: caisseDepart,
       depotsMad: kpi.totalDepotsMad,
@@ -406,7 +412,7 @@ export function CaisseJour() {
       chargesMad: chargesJour,
       alimentationsMad: sumMouvementsJour(mouvementsJour, day, 'ALIMENTATION', 'MAD'),
       prelevementsMad: sumMouvementsJour(mouvementsJour, day, 'PRELEVEMENT', 'MAD'),
-      creditsSoldesMad: -kpi.creditsSoldesMad,
+      creditsSoldesMad: -creditsPaiementsJour,
       reliquatsSoldesMad: sumMouvementsJour(mouvementsJour, day, 'RELIQUAT', 'MAD'),
     });
   }, [caisseDepart, kpi, chargesJour, mouvementsJour, day]);
@@ -783,8 +789,10 @@ export function CaisseJour() {
               </div>
 
               <div className="flex justify-between gap-2 px-2 py-1.5">
-                <span className="text-xs text-zinc-600">Crédits soldés (caisse)</span>
-                <span className="font-semibold tabular-nums text-emerald-700">+{fmt(kpi.creditsSoldesMad)}</span>
+                <span className="text-xs text-zinc-600">Crédits payés (caisse)</span>
+                <span className="font-semibold tabular-nums text-red-600">
+                  -{fmt(loadCredits().flatMap((c) => c.paiements ?? []).filter((p) => p.date === day).reduce((s, p) => s + p.montant, 0))}
+                </span>
               </div>
 
               <div className="border-t-2 border-blue-300 pt-3 mt-2" />
