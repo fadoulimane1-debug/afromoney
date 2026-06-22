@@ -5,7 +5,7 @@ import { Logo } from '@/components/Logo';
 import { useAuthContext } from '@/context/AuthContext';
 
 // ⚠️ Remplace par l'URL de ton Cloudflare Worker après déploiement
-const WORKER_URL = 'https://afromoney-otp.fadoulimane1.workers.dev';
+const WORKER_URL = 'https://ancient-credit-19e4.fadoulimane1.workers.dev';
 
 interface FormErrors {
   email?: string;
