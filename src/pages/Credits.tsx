@@ -269,6 +269,10 @@ export function Credits() {
   const [paiementPartielId, setPaiementPartielId] = useState<string | null>(null);
   const [montantPartiel, setMontantPartiel] = useState('');
 
+  // ── Ajout prêté inline ──
+  const [pretéId, setPretéId] = useState<string | null>(null);
+  const [montantPreté, setMontantPreté] = useState('');
+
   // ── Modal crédit existant ──
   const [modalCreditExistant, setModalCreditExistant] = useState<{
     credit: Credit;
@@ -404,6 +408,18 @@ export function Credits() {
       ? `Crédit soldé — ${fmt(updated.contre_val_mad)} MAD`
       : `Paiement partiel enregistré — reste ${fmt(updated.montantRestant)} MAD`;
     showToast(msg, true);
+  }
+
+  function handleAjouterPreté(id: string) {
+    const val = parseFloat(montantPreté);
+    if (!Number.isFinite(val) || val <= 0) return;
+    const updated = ajouterAuCredit(id, val);
+    if (updated) {
+      setCredits(loadCredits());
+      showToast(`+ ${fmt(val)} MAD ajouté — nouveau restant : ${fmt(updated.montantRestant)} MAD`, true);
+    }
+    setPretéId(null);
+    setMontantPreté('');
   }
 
   function marquerRetard(id: string) {
@@ -753,12 +769,34 @@ export function Credits() {
                                         <X size={10} />
                                       </button>
                                     </div>
+                                  ) : pretéId === c.id ? (
+                                    <div className="flex items-center gap-1">
+                                      <input type="number" value={montantPreté} onChange={(e) => setMontantPreté(e.target.value)}
+                                        placeholder="Montant prêté (MAD)"
+                                        className="h-6 w-28 rounded border border-blue-300 px-1 text-xs" autoFocus
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleAjouterPreté(c.id); if (e.key === 'Escape') { setPretéId(null); setMontantPreté(''); } }} />
+                                      <button onClick={() => handleAjouterPreté(c.id)}
+                                        className="flex h-6 items-center gap-1 rounded bg-blue-100 px-2 text-[10px] font-semibold text-blue-700 hover:bg-blue-200">
+                                        <PlusCircle size={10} /> OK
+                                      </button>
+                                      <button onClick={() => { setPretéId(null); setMontantPreté(''); }}
+                                        className="flex h-6 items-center rounded bg-zinc-100 px-1 text-[10px] text-zinc-500 hover:bg-zinc-200">
+                                        <X size={10} />
+                                      </button>
+                                    </div>
                                   ) : (
-                                    <button onClick={() => setPaiementPartielId(c.id)}
-                                      title="Cliquer pour saisir le montant payé"
-                                      className="flex h-6 items-center gap-1 rounded bg-emerald-100 px-2 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-200">
-                                      <CheckCircle size={10} /> Payé
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                      <button onClick={() => { setPaiementPartielId(c.id); setPretéId(null); }}
+                                        title="Enregistrer un paiement"
+                                        className="flex h-6 items-center gap-1 rounded bg-emerald-100 px-2 text-[10px] font-semibold text-emerald-700 hover:bg-emerald-200">
+                                        <CheckCircle size={10} /> Payé
+                                      </button>
+                                      <button onClick={() => { setPretéId(c.id); setPaiementPartielId(null); setMontantPreté(''); }}
+                                        title="Ajouter un nouveau montant prêté"
+                                        className="flex h-6 items-center gap-1 rounded bg-blue-100 px-2 text-[10px] font-semibold text-blue-700 hover:bg-blue-200">
+                                        <PlusCircle size={10} /> + Prêté
+                                      </button>
+                                    </div>
                                   )
                                 )}
                                 {c.statut === 'En cours' && (
