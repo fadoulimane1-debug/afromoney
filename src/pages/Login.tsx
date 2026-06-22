@@ -99,6 +99,8 @@ export function Login() {
       setResendCooldown(60);
     } catch {
       setErrors({ general: 'Impossible d\'envoyer le SMS. Réessayez.' });
+      setLoading(false);
+      return;
     }
 
     setLoading(false);
