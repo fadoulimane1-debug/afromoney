@@ -3,9 +3,30 @@ import { useNavigate } from 'react-router-dom';
 import { LogIn, Eye, EyeOff, CheckCircle2, ShieldCheck, MessageSquare, RotateCcw } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { useAuthContext } from '@/context/AuthContext';
+// @ts-ignore
+import emailjs from 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/+esm';
 
-// ⚠️ Remplace par l'URL de ton Cloudflare Worker après déploiement
-const WORKER_URL = 'https://ancient-credit-19e4.fadoulimane1.workers.dev';
+// ── EmailJS config ──
+const EMAILJS_SERVICE_ID  = 'service_r7hqb0a';
+const EMAILJS_TEMPLATE_ID = 'template_1eagmoq';
+const EMAILJS_PUBLIC_KEY  = '3EADglSyrabvBHuvW';
+
+// ── Mapping email app → email réel ──
+const USER_REAL_EMAILS: Record<string, string> = {
+  'admin@afromoney.ma': 'abdelzaim4@gmail.com',
+};
+
+// ── OTP en mémoire (TTL 5 min) ──
+let otpStore: { code: string; expiry: number; email: string } | null = null;
+
+function generateOTP(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function maskEmail(email: string): string {
+  const [user, domain] = email.split('@');
+  return user.slice(0, 2) + '***@' + domain;
+}
 
 interface FormErrors {
   email?: string;
@@ -42,18 +63,10 @@ function validate(email: string, password: string): FormErrors {
   return errors;
 }
 
-// Masque le numéro : +212660090207 → +212 6** *** 207
-function maskPhone(phone: string) {
-  return phone.replace(/(\+\d{3})\d+(\d{3})/, '$1 6** *** $2');
-}
-
-const MASKED_PHONE = maskPhone('+212660090207');
-
 export function Login() {
   const navigate = useNavigate();
   const { login, isAuthenticated } = useAuthContext();
 
-  // Étape : 'credentials' | 'otp'
   const [step, setStep]           = useState<'credentials' | 'otp'>('credentials');
   const [email, setEmail]         = useState('');
   const [password, setPassword]   = useState('');
@@ -63,19 +76,44 @@ export function Login() {
   const [loading, setLoading]     = useState(false);
   const [success, setSuccess]     = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [maskedEmail, setMaskedEmail] = useState('');
 
   useEffect(() => {
     if (isAuthenticated) navigate('/', { replace: true });
   }, [isAuthenticated, navigate]);
 
-  // Countdown renvoi
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
     return () => clearTimeout(t);
   }, [resendCooldown]);
 
-  // Étape 1 : vérifier credentials → envoyer OTP
+  async function sendOTP(userEmail: string): Promise<boolean> {
+    const realEmail = USER_REAL_EMAILS[userEmail.toLowerCase()];
+    if (!realEmail) return false;
+
+    const code = generateOTP();
+    otpStore = { code, expiry: Date.now() + 5 * 60 * 1000, email: userEmail };
+
+    try {
+      await emailjs.send(
+        EMAILJS_SERVICE_ID,
+        EMAILJS_TEMPLATE_ID,
+        {
+          to_email: realEmail,
+          otp_code: code,
+        },
+        EMAILJS_PUBLIC_KEY,
+      );
+      setMaskedEmail(maskEmail(realEmail));
+      return true;
+    } catch {
+      otpStore = null;
+      return false;
+    }
+  }
+
+  // Étape 1 : credentials → envoyer OTP
   async function handleCredentials(e: React.FormEvent) {
     e.preventDefault();
     const errs = validate(email, password);
@@ -83,7 +121,6 @@ export function Login() {
     setErrors({});
     setLoading(true);
 
-    // Vérifier les credentials d'abord
     const result = await login(email, password);
     if (!result.ok) {
       setErrors({ general: result.error });
@@ -91,18 +128,15 @@ export function Login() {
       return;
     }
 
-    // Credentials OK → envoyer OTP
-    try {
-      const res = await fetch(`${WORKER_URL}/send-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-      if (!res.ok) throw new Error('Erreur envoi SMS');
-      setStep('otp');
-      setResendCooldown(60);
-    } catch {
-      setErrors({ general: 'Impossible d\'envoyer le SMS. Réessayez.' });
+    const sent = await sendOTP(email);
+    if (!sent) {
+      setErrors({ general: 'Impossible d\'envoyer le code. Vérifiez votre connexion.' });
       setLoading(false);
       return;
     }
 
+    setStep('otp');
+    setResendCooldown(60);
     setLoading(false);
   }
 
@@ -113,44 +147,37 @@ export function Login() {
     setErrors({});
     setLoading(true);
 
-    try {
-      const res = await fetch(`${WORKER_URL}/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code: otpCode }),
-      });
-      const data = await res.json();
-
-      if (!data.valid) {
-        setErrors({ otp: data.reason || 'Code incorrect' });
-        setLoading(false);
-        return;
-      }
-
-      // OTP valide → succès
-      setSuccess(true);
-      await new Promise((r) => setTimeout(r, 900));
-      navigate('/', { replace: true });
-
-    } catch {
-      setErrors({ otp: 'Erreur de vérification. Réessayez.' });
+    if (!otpStore) {
+      setErrors({ otp: 'Aucun code envoyé — renvoyez un code' });
+      setLoading(false);
+      return;
+    }
+    if (Date.now() > otpStore.expiry) {
+      otpStore = null;
+      setErrors({ otp: 'Code expiré — renvoyez un nouveau code' });
+      setLoading(false);
+      return;
+    }
+    if (otpStore.code !== otpCode.trim()) {
+      setErrors({ otp: 'Code incorrect' });
+      setLoading(false);
+      return;
     }
 
-    setLoading(false);
+    otpStore = null;
+    setSuccess(true);
+    await new Promise((r) => setTimeout(r, 900));
+    navigate('/', { replace: true });
   }
 
-  // Renvoyer OTP
   async function handleResend() {
     if (resendCooldown > 0) return;
     setOtpCode('');
     setErrors({});
     setLoading(true);
-    try {
-      await fetch(`${WORKER_URL}/send-otp`, { method: 'POST' });
-      setResendCooldown(60);
-    } catch {
-      setErrors({ general: 'Impossible d\'envoyer le SMS.' });
-    }
+    const sent = await sendOTP(email);
+    if (!sent) setErrors({ general: 'Impossible d\'envoyer le code.' });
+    else setResendCooldown(60);
     setLoading(false);
   }
 
@@ -163,7 +190,6 @@ export function Login() {
   return (
     <div className="login-bg relative flex min-h-screen items-center justify-center px-4 py-8 overflow-hidden">
 
-      {/* Animated orbs */}
       <div className="pointer-events-none absolute rounded-full blur-[120px]"
         style={{ width: 600, height: 600, background: 'rgba(196,30,58,0.28)', top: '-10%', left: '-15%', animation: 'orbFloat1 18s ease-in-out infinite' }} />
       <div className="pointer-events-none absolute rounded-full blur-[120px]"
@@ -171,13 +197,10 @@ export function Login() {
       <div className="pointer-events-none absolute rounded-full blur-[80px]"
         style={{ width: 280, height: 280, background: 'rgba(212,175,55,0.22)', top: '35%', right: '20%', animation: 'orbFloat3 14s ease-in-out infinite' }} />
 
-      {/* Grid overlay */}
       <div className="pointer-events-none absolute inset-0"
         style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
 
-      {/* Card */}
       <div className="relative w-full max-w-sm" style={{ animation: 'slideUpFade 0.55s cubic-bezier(0.16,1,0.3,1) both' }}>
-        {/* Glow ring */}
         <div className="absolute -inset-px rounded-[24px]"
           style={{ background: 'linear-gradient(135deg, rgba(196,30,58,0.5), rgba(212,175,55,0.4), rgba(45,80,22,0.5))', filter: 'blur(1px)' }} />
 
@@ -189,15 +212,14 @@ export function Login() {
             <div className="mb-4 rounded-2xl p-1" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)' }}>
               <Logo size="md" className="drop-shadow-xl" />
             </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white" style={{ fontFamily: 'Outfit, Inter, sans-serif', animation: 'fadeInDown 0.5s ease 0.1s both' }}>
+            <h1 className="text-2xl font-bold tracking-tight text-white" style={{ fontFamily: 'Outfit, Inter, sans-serif' }}>
               AFROMONEY
             </h1>
-            <p className="mt-1 text-center text-[12px] text-white/45" style={{ animation: 'fadeInDown 0.5s ease 0.18s both' }}>
-              {step === 'otp' ? 'Vérification par SMS' : 'Bureau de change · Interface sécurisée'}
+            <p className="mt-1 text-center text-[12px] text-white/45">
+              {step === 'otp' ? 'Vérification par email' : 'Bureau de change · Interface sécurisée'}
             </p>
           </div>
 
-          {/* Divider */}
           <div className="mx-8 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(212,175,55,0.4), transparent)' }} />
 
           {/* ── SUCCÈS ── */}
@@ -211,33 +233,28 @@ export function Login() {
           /* ── ÉTAPE OTP ── */
           ) : step === 'otp' ? (
             <form onSubmit={handleOTP} className="space-y-5 px-8 pt-6 pb-7" noValidate>
-              {/* Icône SMS */}
               <div className="flex flex-col items-center gap-2 pb-1">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl"
                   style={{ background: 'rgba(212,175,55,0.12)', border: '1px solid rgba(212,175,55,0.3)' }}>
                   <MessageSquare size={22} style={{ color: '#D4AF37' }} />
                 </div>
                 <p className="text-center text-[12px] text-white/50 leading-relaxed">
-                  Code envoyé au<br />
-                  <span className="font-semibold text-white/75">{MASKED_PHONE}</span>
+                  Code envoyé à<br />
+                  <span className="font-semibold text-white/75">{maskedEmail}</span>
                 </p>
               </div>
 
               {errors.general && (
                 <div className="rounded-xl border border-red-500/25 px-4 py-3 text-sm text-red-400"
-                  style={{ background: 'rgba(196,30,58,0.1)', animation: 'slideUpFade 0.3s ease both' }}>
+                  style={{ background: 'rgba(196,30,58,0.1)' }}>
                   {errors.general}
                 </div>
               )}
 
-              {/* Input OTP */}
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-white/60">Code à 6 chiffres</label>
                 <input
-                  type="text"
-                  inputMode="numeric"
-                  pattern="[0-9]*"
-                  maxLength={6}
+                  type="text" inputMode="numeric" pattern="[0-9]*" maxLength={6}
                   value={otpCode}
                   onChange={(e) => { setOtpCode(e.target.value.replace(/\D/g, '')); setErrors({}); }}
                   placeholder="• • • • • •"
@@ -248,7 +265,6 @@ export function Login() {
                 {errors.otp && <p className="text-[11px] text-red-400">{errors.otp}</p>}
               </div>
 
-              {/* Valider */}
               <button type="submit" disabled={loading} className="login-btn w-full">
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -260,16 +276,14 @@ export function Login() {
                   </span>
                 ) : (
                   <span className="flex items-center justify-center gap-2">
-                    <ShieldCheck size={15} />
-                    Valider le code
+                    <ShieldCheck size={15} /> Valider le code
                   </span>
                 )}
               </button>
 
-              {/* Renvoyer + Retour */}
               <div className="flex items-center justify-between pt-1">
                 <button type="button" onClick={() => { setStep('credentials'); setOtpCode(''); setErrors({}); }}
-                  className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors">
+                  className="text-[11px] text-white/30 hover:text-white/60 transition-colors">
                   ← Retour
                 </button>
                 <button type="button" onClick={handleResend} disabled={resendCooldown > 0}
@@ -286,12 +300,11 @@ export function Login() {
             <form onSubmit={handleCredentials} className="space-y-5 px-8 pt-6 pb-7" noValidate>
               {errors.general && (
                 <div className="rounded-xl border border-red-500/25 px-4 py-3 text-sm text-red-400"
-                  style={{ background: 'rgba(196,30,58,0.1)', animation: 'slideUpFade 0.3s ease both' }}>
+                  style={{ background: 'rgba(196,30,58,0.1)' }}>
                   {errors.general}
                 </div>
               )}
 
-              {/* Email */}
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-white/60">Adresse email</label>
                 <input type="email" value={email}
@@ -301,7 +314,6 @@ export function Login() {
                 {errors.email && <p className="text-[11px] text-red-400">{errors.email}</p>}
               </div>
 
-              {/* Password */}
               <div className="space-y-2">
                 <label className="block text-xs font-medium text-white/60">Mot de passe</label>
                 <div className="relative">
@@ -310,14 +322,13 @@ export function Login() {
                     placeholder="••••••••" autoComplete="current-password" className="login-input w-full pr-10"
                     style={errors.password ? { borderColor: 'rgba(196,30,58,0.6)' } : {}} />
                   <button type="button" tabIndex={-1} onClick={() => setShowPwd((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 transition-colors hover:text-white/70">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 hover:text-white/70">
                     {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
                   </button>
                 </div>
                 {errors.password && <p className="text-[11px] text-red-400">{errors.password}</p>}
               </div>
 
-              {/* Submit */}
               <button type="submit" disabled={loading} className="login-btn w-full">
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
@@ -329,15 +340,14 @@ export function Login() {
                   </span>
                 ) : (
                   <span className="flex items-center justify-center gap-2">
-                    <LogIn size={15} />
-                    Se connecter
+                    <LogIn size={15} /> Se connecter
                   </span>
                 )}
               </button>
             </form>
           )}
 
-          {/* Demo accounts — uniquement étape credentials */}
+          {/* Demo accounts */}
           {!success && step === 'credentials' && (
             <div className="px-8 pb-8">
               <div className="mb-3 flex items-center gap-2">
@@ -364,12 +374,11 @@ export function Login() {
             </div>
           )}
 
-          {/* Footer */}
           <div className="rounded-b-[22px] border-t border-white/[0.06] px-8 py-3 text-center"
             style={{ background: 'rgba(255,255,255,0.02)' }}>
             <div className="flex items-center justify-center gap-1.5 text-[10px] text-white/25">
               <ShieldCheck size={11} />
-              <span>Session chiffrée · Vérification SMS activée</span>
+              <span>Session chiffrée · Vérification email activée</span>
             </div>
           </div>
         </div>
