@@ -38,6 +38,8 @@ interface FormState {
   montantMAD: string;
   statut: TxStatut;
   montantAPayer: string;
+  // ACHAT partiel
+  montantPayeAchat: string;
   operation: string;
   note: string;
   beneficiaire: string;
@@ -55,6 +57,7 @@ interface FormErrors {
   jour?: string;
   mois?: string;
   montantAPayer?: string;
+  montantPayeAchat?: string;
   clientId?: string;
 }
 
@@ -99,22 +102,31 @@ function validate(f: FormState): FormErrors {
   const m = parseInt(f.mois, 10);
   if (!f.jour || j < 1 || j > 31) e.jour = 'Jour 1–31';
   if (!f.mois || m < 1 || m > 12) e.mois = 'Mois 1–12';
-  // Identification client obligatoire si montant ≥ seuil (R5)
   const mad = parseFloat(f.montantMAD);
   if (Number.isFinite(mad) && mad >= SEUIL_IDENTIFICATION_MAD && !f.clientId) {
     e.clientId = `Identification client obligatoire (opération ≥ ${SEUIL_IDENTIFICATION_MAD.toLocaleString('fr-MA')} MAD — R5)`;
   }
   if (f.type === 'VENTE') {
-    const mad = Number.isFinite(parseMontantStr(f.montantMAD))
+    const madV = Number.isFinite(parseMontantStr(f.montantMAD))
       ? parseMontantStr(f.montantMAD)
       : parseMontantStr(f.montant) * parseMontantStr(f.taux);
     const paye = f.montantAPayer.trim() === '' ? 0 : parseMontantStr(f.montantAPayer);
-    if (!Number.isFinite(mad) || mad <= 0) {
+    if (!Number.isFinite(madV) || madV <= 0) {
       e.montantAPayer = 'Montant vente (MAD) requis';
     } else if (!Number.isFinite(paye) || paye < 0) {
       e.montantAPayer = 'Montant payé invalide';
-    } else if (paye > mad + 0.001) {
+    } else if (paye > madV + 0.001) {
       e.montantAPayer = 'Le montant payé ne peut pas dépasser le montant de la vente';
+    }
+  }
+  // Validation paiement partiel ACHAT
+  if (f.type === 'ACHAT' && f.montantPayeAchat.trim() !== '') {
+    const madA = parseMontantStr(f.montantMAD);
+    const payeA = parseMontantStr(f.montantPayeAchat);
+    if (!Number.isFinite(payeA) || payeA < 0) {
+      e.montantPayeAchat = 'Montant payé invalide';
+    } else if (Number.isFinite(madA) && payeA > madA + 0.001) {
+      e.montantPayeAchat = 'Ne peut pas dépasser le montant de l\'achat';
     }
   }
   return e;
@@ -138,6 +150,7 @@ function emptyForm(): FormState {
     montantMAD: '',
     statut: 'PAYÉ',
     montantAPayer: '',
+    montantPayeAchat: '',
     operation: '',
     note: '',
     beneficiaire: '',
@@ -147,35 +160,19 @@ function emptyForm(): FormState {
 
 interface ToastState { msg: string; ok: boolean }
 
-/* ─── Small UI components ─── */
-
 function Toast({ toast }: { toast: ToastState }) {
   return (
-    <div
-      className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium ${
-        toast.ok
-          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-          : 'border-red-200 bg-red-50 text-red-600'
-      }`}
-    >
+    <div className={`flex items-center gap-2 rounded-lg border px-4 py-3 text-sm font-medium ${
+      toast.ok ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-red-200 bg-red-50 text-red-600'
+    }`}>
       {toast.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
       {toast.msg}
     </div>
   );
 }
 
-function Field({
-  label,
-  error,
-  hint,
-  className,
-  children,
-}: {
-  label: string;
-  error?: string;
-  hint?: string;
-  className?: string;
-  children: React.ReactNode;
+function Field({ label, error, hint, className, children }: {
+  label: string; error?: string; hint?: string; className?: string; children: React.ReactNode;
 }) {
   return (
     <div className={className ? `space-y-1 ${className}` : 'space-y-1'}>
@@ -187,69 +184,39 @@ function Field({
   );
 }
 
-function NativeSelect({
-  value,
-  onChange,
-  hasError = false,
-  children,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  hasError?: boolean;
-  children: React.ReactNode;
+function NativeSelect({ value, onChange, hasError = false, children }: {
+  value: string; onChange: (v: string) => void; hasError?: boolean; children: React.ReactNode;
 }) {
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
+    <select value={value} onChange={(e) => onChange(e.target.value)}
       className={`flex h-9 w-full rounded-md border bg-white px-3 py-1 text-sm text-zinc-900 shadow-sm
         focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-        ${hasError ? 'border-red-400 bg-red-50' : 'border-zinc-300'}`}
-    >
+        ${hasError ? 'border-red-400 bg-red-50' : 'border-zinc-300'}`}>
       {children}
     </select>
   );
 }
 
-/* ─── ClientSelector ─── */
-
-function ClientSelector({
-  value,
-  onChange,
-  hasError,
-  required,
-}: {
-  value: string;
-  onChange: (id: string, client: Client | null) => void;
-  hasError?: boolean;
-  required?: boolean;
+function ClientSelector({ value, onChange, hasError, required }: {
+  value: string; onChange: (id: string, client: Client | null) => void; hasError?: boolean; required?: boolean;
 }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const clients = getClients();
-
   const selected = clients.find((c) => c.id === value) ?? null;
-
   const filtered = clients.filter((c) => {
     const q = search.toLowerCase();
-    return (
-      !q ||
-      c.nom.toLowerCase().includes(q) ||
-      c.pieceNumero.toLowerCase().includes(q)
-    );
+    return !q || c.nom.toLowerCase().includes(q) || c.pieceNumero.toLowerCase().includes(q);
   });
-
   const CAT_BADGE: Record<string, string> = {
     STANDARD: 'bg-zinc-100 text-zinc-600',
     HABITUEL: 'bg-blue-100 text-blue-700',
     AMI:      'bg-amber-100 text-amber-700',
   };
   const CAT_EMOJI: Record<string, string> = { STANDARD: '○', HABITUEL: '✅', AMI: '⭐' };
-
   return (
     <div className="relative">
-      {/* Trigger */}
       {selected ? (
         <div className={`flex h-9 items-center gap-2 rounded-md border bg-white px-3 text-sm ${hasError ? 'border-red-400' : 'border-zinc-300'}`}>
           <UserCheck size={13} className="shrink-0 text-blue-500" />
@@ -257,51 +224,34 @@ function ClientSelector({
           <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${CAT_BADGE[selected.categorie]}`}>
             {CAT_EMOJI[selected.categorie]} {selected.categorie}
           </span>
-          <button
-            type="button"
-            onClick={() => { onChange('', null); setSearch(''); }}
-            className="text-zinc-400 hover:text-zinc-700"
-          >
+          <button type="button" onClick={() => { onChange('', null); setSearch(''); }} className="text-zinc-400 hover:text-zinc-700">
             <XIcon size={13} />
           </button>
         </div>
       ) : (
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          className={`flex h-9 w-full items-center gap-2 rounded-md border bg-white px-3 text-sm text-left transition-colors hover:border-zinc-400 ${hasError ? 'border-red-400 bg-red-50' : 'border-zinc-300'}`}
-        >
+        <button type="button" onClick={() => setOpen((o) => !o)}
+          className={`flex h-9 w-full items-center gap-2 rounded-md border bg-white px-3 text-sm text-left transition-colors hover:border-zinc-400 ${hasError ? 'border-red-400 bg-red-50' : 'border-zinc-300'}`}>
           <Search size={13} className="shrink-0 text-zinc-400" />
-          <span className={required ? 'text-zinc-400' : 'text-zinc-400'}>
+          <span className="text-zinc-400">
             {required ? 'Sélectionner client (obligatoire ≥10k)…' : 'Sélectionner client (optionnel)…'}
           </span>
         </button>
       )}
-
-      {/* Dropdown */}
       {open && !selected && (
         <div className="absolute left-0 top-full z-40 mt-1 w-full min-w-[280px] rounded-lg border border-zinc-300 bg-white py-1 shadow-xl">
           <div className="px-2 pb-1 pt-1">
-            <input
-              autoFocus
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+            <input autoFocus type="text" value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Rechercher nom, N° pièce..."
-              className="flex h-8 w-full rounded-md border border-zinc-300 bg-zinc-50 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
+              className="flex h-8 w-full rounded-md border border-zinc-300 bg-zinc-50 px-2 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" />
           </div>
           <div className="max-h-48 overflow-y-auto">
             {filtered.length === 0 ? (
               <p className="px-3 py-2 text-xs text-zinc-400">Aucun client trouvé.</p>
             ) : (
               filtered.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
+                <button key={c.id} type="button"
                   onClick={() => { onChange(c.id, c); setOpen(false); setSearch(''); }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-100"
-                >
+                  className="flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-zinc-100">
                   <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-bold ${CAT_BADGE[c.categorie]}`}>
                     {CAT_EMOJI[c.categorie]}
                   </span>
@@ -312,11 +262,8 @@ function ClientSelector({
             )}
           </div>
           <div className="border-t border-zinc-100 px-2 pb-2 pt-1">
-            <button
-              type="button"
-              onClick={() => { setOpen(false); navigate('/clients'); }}
-              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50"
-            >
+            <button type="button" onClick={() => { setOpen(false); navigate('/clients'); }}
+              className="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-semibold text-blue-600 hover:bg-blue-50">
               + Gérer la base clients →
             </button>
           </div>
@@ -334,18 +281,14 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ─── Main form ─── */
-
 export function TransactionForm({ onSuccess }: TransactionFormProps) {
   const [form, setForm] = useState<FormState>(emptyForm);
   const [errors, setErrors] = useState<FormErrors>({});
   const [toast, setToast] = useState<ToastState | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const opDirty = useRef(false);
-  /** false = montant payé suit le montant de vente (taux × quantité) */
   const payeDirty = useRef(false);
 
-  /* Sync jour/mois from date */
   useEffect(() => {
     const d = dayjs(form.date);
     if (d.isValid()) {
@@ -353,12 +296,10 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
     }
   }, [form.date]);
 
-  /* Auto-fill taux when devise or type changes */
   useEffect(() => {
     setForm((f) => ({ ...f, taux: getDefaultTaux(f.devise, f.type) }));
   }, [form.devise, form.type]);
 
-  /* Auto-calculate montantMAD ; VENTE : montant payé = montant vente tant que non modifié */
   useEffect(() => {
     const m = parseMontantStr(form.montant);
     const t = parseMontantStr(form.taux);
@@ -377,7 +318,6 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
     }
   }, [form.montant, form.taux, form.type]);
 
-  /* VENTE : statut auto PAYÉ / NON-PAYÉ selon reste dû */
   useEffect(() => {
     if (form.type !== 'VENTE') return;
     const mad = parseMontantStr(form.montantMAD);
@@ -388,7 +328,22 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
     setForm((f) => (f.statut === statut ? f : { ...f, statut }));
   }, [form.type, form.montantMAD, form.montantAPayer]);
 
-  /* Auto-fill operation libellé */
+  // Statut auto pour ACHAT partiel
+  useEffect(() => {
+    if (form.type !== 'ACHAT') return;
+    const mad = parseMontantStr(form.montantMAD);
+    if (!Number.isFinite(mad) || mad <= 0) return;
+    if (form.montantPayeAchat.trim() === '') {
+      // Pas de paiement partiel saisi → PAYÉ par défaut
+      setForm((f) => (f.statut === 'PAYÉ' ? f : { ...f, statut: 'PAYÉ' }));
+      return;
+    }
+    const paye = parseMontantStr(form.montantPayeAchat);
+    if (!Number.isFinite(paye) || paye < 0) return;
+    const statut: TxStatut = paye >= mad - 0.001 ? 'PAYÉ' : 'CRÉDIT';
+    setForm((f) => (f.statut === statut ? f : { ...f, statut }));
+  }, [form.type, form.montantMAD, form.montantPayeAchat]);
+
   useEffect(() => {
     if (opDirty.current) return;
     const m = parseFloat(form.montant);
@@ -407,12 +362,14 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
   function applyPaiementCompletVente() {
     if (!hasMAD) return;
     payeDirty.current = false;
-    setForm((f) => ({
-      ...f,
-      montantAPayer: formatMontantFr(montantMADNum),
-      statut: 'PAYÉ',
-    }));
+    setForm((f) => ({ ...f, montantAPayer: formatMontantFr(montantMADNum), statut: 'PAYÉ' }));
     setErrors((e) => ({ ...e, montantAPayer: undefined }));
+  }
+
+  function applyPaiementCompletAchat() {
+    if (!hasMAD) return;
+    setForm((f) => ({ ...f, montantPayeAchat: formatMontantFr(montantMADNum), statut: 'PAYÉ' }));
+    setErrors((e) => ({ ...e, montantPayeAchat: undefined }));
   }
 
   function showToast(msg: string, ok: boolean) {
@@ -440,29 +397,36 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
 
     let statutFinal = form.statut;
     let montantAPayer: number | undefined;
+
     if (form.type === 'VENTE') {
       const paye = form.montantAPayer.trim() === '' ? 0 : parseMontantStr(form.montantAPayer);
       montantAPayer = Number.isFinite(paye) && paye >= 0 ? paye : 0;
       statutFinal = statutVenteFromPaye(montantMADFinal, montantAPayer);
+    } else if (form.type === 'ACHAT' && form.montantPayeAchat.trim() !== '') {
+      // Paiement partiel achat — montantAPayer = ce qui a été payé
+      const payeA = parseMontantStr(form.montantPayeAchat);
+      if (Number.isFinite(payeA) && payeA >= 0) {
+        montantAPayer = payeA;
+        statutFinal = payeA >= montantMADFinal - 0.001 ? 'PAYÉ' : 'CRÉDIT';
+      }
     } else if (form.statut === 'CRÉDIT' && form.montantAPayer.trim() !== '') {
       const ap = parseFloat(form.montantAPayer);
       montantAPayer = Number.isFinite(ap) ? ap : undefined;
     }
+
     const caisseDepart =
       form.caisseDepart.trim() !== '' ? parseFloat(form.caisseDepart) : undefined;
-
     const montantNum = parseFloat(form.montant);
     const tauxNum = parseFloat(form.taux);
 
-    // Bloquer paiement partiel pour client STANDARD
     if (form.type === 'VENTE' && form.clientId) {
       const selectedClient = getClients().find((c) => c.id === form.clientId);
       if (selectedClient?.categorie === 'STANDARD') {
         const paye = form.montantAPayer.trim() === '' ? 0 : parseMontantStr(form.montantAPayer);
         if (paye < montantMADFinal - 0.01) {
           showToast(
-            `Client STANDARD "${selectedClient.nom}" — paiement intégral requis. Opérations partielles (reliquats) réservées aux clients HABITUEL / AMI.`,
-            false
+            `Client STANDARD "${selectedClient.nom}" — paiement intégral requis. Opérations partielles réservées aux clients HABITUEL / AMI.`,
+            false,
           );
           return;
         }
@@ -495,9 +459,7 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
       employeId: form.employeId,
       employeNom: employe?.nom,
       type: form.type,
-      operation:
-        form.operation.trim() ||
-        buildDefaultOperation(form.type, montantNum, form.devise),
+      operation: form.operation.trim() || buildDefaultOperation(form.type, montantNum, form.devise),
       devise: form.devise.toUpperCase(),
       montant: montantNum,
       taux: tauxNum,
@@ -507,9 +469,7 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
       note: form.note.trim(),
       statut: statutFinal,
       beneficiaire:
-        form.type === 'DEPOT' && form.beneficiaire.trim()
-          ? form.beneficiaire.trim()
-          : undefined,
+        form.type === 'DEPOT' && form.beneficiaire.trim() ? form.beneficiaire.trim() : undefined,
       clientId: form.clientId || undefined,
     });
 
@@ -531,112 +491,81 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
 
   const montantMADNum = parseMontantStr(form.montantMAD);
   const hasMAD = Number.isFinite(montantMADNum) && montantMADNum > 0;
-  const payeNum =
-    form.montantAPayer.trim() === '' ? 0 : parseMontantStr(form.montantAPayer);
+
+  // VENTE
+  const payeNum = form.montantAPayer.trim() === '' ? 0 : parseMontantStr(form.montantAPayer);
   const payeOk = Number.isFinite(payeNum) && payeNum >= 0;
   const resteNonPayeAffiche =
     form.type === 'VENTE' && hasMAD && payeOk
       ? formatMontantFr(Math.max(0, Math.round((montantMADNum - payeNum) * 100) / 100))
       : '';
 
+  // ACHAT partiel
+  const payeAchatNum = form.montantPayeAchat.trim() === '' ? null : parseMontantStr(form.montantPayeAchat);
+  const hasPayeAchat = payeAchatNum !== null && Number.isFinite(payeAchatNum) && payeAchatNum >= 0;
+  const resteAchatAffiche =
+    form.type === 'ACHAT' && hasMAD && hasPayeAchat
+      ? formatMontantFr(Math.max(0, Math.round((montantMADNum - payeAchatNum!) * 100) / 100))
+      : '';
+  const achatPartiel = hasPayeAchat && payeAchatNum! < montantMADNum - 0.001;
+
   return (
     <Card className="border-zinc-200 shadow-sm">
       <CardHeader className="border-b border-zinc-100 pb-4">
-        <CardTitle className="text-base font-semibold text-zinc-900">
-          Nouvelle opération — Caisse V8
-        </CardTitle>
+        <CardTitle className="text-base font-semibold text-zinc-900">Nouvelle opération — Caisse V8</CardTitle>
         <p className="text-xs text-zinc-400">
-          Tous les champs marqués * sont obligatoires. Le taux est auto-rempli depuis les taux du jour (achat/vente).
+          Tous les champs marqués * sont obligatoires. Le taux est auto-rempli depuis les taux du jour.
         </p>
       </CardHeader>
 
       <CardContent className="pt-4">
         <form onSubmit={handleSubmit} noValidate>
-          {toast && (
-            <div className="mb-4">
-              <Toast toast={toast} />
-            </div>
-          )}
+          {toast && <div className="mb-4"><Toast toast={toast} /></div>}
 
           <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-4">
 
-            {/* ── Section 1: Identification journée ── */}
             <SectionLabel>Identification journée</SectionLabel>
 
             <Field label="Jour *" error={errors.jour} hint="Auto-rempli depuis la date">
-              <Input
-                type="number"
-                min={1}
-                max={31}
-                value={form.jour}
-                onChange={(e) => set('jour', e.target.value)}
-                className={errors.jour ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+              <Input type="number" min={1} max={31} value={form.jour} onChange={(e) => set('jour', e.target.value)}
+                className={errors.jour ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
             <Field label="Mois *" error={errors.mois} hint="Auto-rempli depuis la date">
-              <Input
-                type="number"
-                min={1}
-                max={12}
-                value={form.mois}
-                onChange={(e) => set('mois', e.target.value)}
-                className={errors.mois ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+              <Input type="number" min={1} max={12} value={form.mois} onChange={(e) => set('mois', e.target.value)}
+                className={errors.mois ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
             <Field label="Date complète *" error={errors.date}>
-              <Input
-                type="date"
-                value={form.date}
-                onChange={(e) => set('date', e.target.value)}
-                max={todayStr()}
-                className={errors.date ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+              <Input type="date" value={form.date} onChange={(e) => set('date', e.target.value)} max={todayStr()}
+                className={errors.date ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
             <Field label="Moment" hint="Phase de la journée">
               <div className="flex h-9 gap-0 overflow-hidden rounded-md border border-zinc-300 bg-white text-sm">
                 {(['MATIN', 'JOURNEE', 'SOIR'] as const).map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => set('moment', m)}
-                    className={[
-                      'flex-1 border-r border-zinc-200 px-1 text-xs font-semibold transition-colors last:border-r-0',
+                  <button key={m} type="button" onClick={() => set('moment', m)}
+                    className={['flex-1 border-r border-zinc-200 px-1 text-xs font-semibold transition-colors last:border-r-0',
                       form.moment === m
-                        ? m === 'MATIN'
-                          ? 'bg-sky-600 text-white'
-                          : m === 'JOURNEE'
-                          ? 'bg-indigo-600 text-white'
-                          : 'bg-violet-600 text-white'
+                        ? m === 'MATIN' ? 'bg-sky-600 text-white' : m === 'JOURNEE' ? 'bg-indigo-600 text-white' : 'bg-violet-600 text-white'
                         : 'text-zinc-500 hover:bg-zinc-50',
-                    ].join(' ')}
-                  >
+                    ].join(' ')}>
                     {m === 'JOURNEE' ? 'JOURNÉE' : m}
                   </button>
                 ))}
               </div>
             </Field>
 
-            {/* ── Section 2: Opération ── */}
             <SectionLabel>Détails de l'opération</SectionLabel>
 
             <Field label="Employé *" error={errors.employeId}>
-              <NativeSelect
-                value={form.employeId}
-                onChange={(v) => set('employeId', v)}
-                hasError={!!errors.employeId}
-              >
-                {UTILISATEURS_TEST.map((u) => (
-                  <option key={u.id} value={u.id}>{u.nom}</option>
-                ))}
+              <NativeSelect value={form.employeId} onChange={(v) => set('employeId', v)} hasError={!!errors.employeId}>
+                {UTILISATEURS_TEST.map((u) => <option key={u.id} value={u.id}>{u.nom}</option>)}
               </NativeSelect>
             </Field>
 
             <Field label="Type / Section *" error={errors.type}>
-              <NativeSelect
-                value={form.type}
+              <NativeSelect value={form.type}
                 onChange={(v) => {
                   const type = v as TransactionType;
                   payeDirty.current = false;
@@ -645,183 +574,125 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
                     const madOk = Number.isFinite(mad) && mad > 0;
                     const payeVente = madOk ? formatMontantFr(mad) : '';
                     return {
-                      ...f,
-                      type,
+                      ...f, type,
                       montantAPayer: type === 'VENTE' ? payeVente : '',
-                      statut:
-                        type === 'VENTE' && madOk
-                          ? statutVenteFromPaye(mad, mad)
-                          : type === 'VENTE'
-                            ? 'NON-PAYÉ'
-                            : f.statut,
+                      montantPayeAchat: '',
+                      statut: type === 'VENTE' && madOk ? statutVenteFromPaye(mad, mad) : type === 'VENTE' ? 'NON-PAYÉ' : f.statut,
                     };
                   });
-                  setErrors((e) => ({ ...e, type: undefined, montantAPayer: undefined }));
+                  setErrors((e) => ({ ...e, type: undefined, montantAPayer: undefined, montantPayeAchat: undefined }));
                 }}
-                hasError={!!errors.type}
-              >
-                {TYPES_OPERATION.map((t) => (
-                  <option key={t} value={t}>{TYPE_OPERATION_LABEL[t]}</option>
-                ))}
+                hasError={!!errors.type}>
+                {TYPES_OPERATION.map((t) => <option key={t} value={t}>{TYPE_OPERATION_LABEL[t]}</option>)}
               </NativeSelect>
             </Field>
 
             <Field label="Devise *" error={errors.devise}>
-              <NativeSelect
-                value={form.devise}
-                onChange={(v) => set('devise', v)}
-                hasError={!!errors.devise}
-              >
-                {DEVISES.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
+              <NativeSelect value={form.devise} onChange={(v) => set('devise', v)} hasError={!!errors.devise}>
+                {DEVISES.map((d) => <option key={d} value={d}>{d}</option>)}
               </NativeSelect>
             </Field>
 
             <Field label="Montant / Quantité *" error={errors.montant}>
-              <Input
-                type="number"
-                step="0.01"
-                min="0.01"
-                placeholder="Ex. 500"
-                value={form.montant}
+              <Input type="number" step="0.01" min="0.01" placeholder="Ex. 500" value={form.montant}
                 onChange={(e) => set('montant', e.target.value)}
-                className={errors.montant ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+                className={errors.montant ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
-            {/* ── Section 3: Calcul MAD ── */}
             <SectionLabel>Calcul MAD</SectionLabel>
 
-            <Field
-              label={tauxLabel(form.type)}
-              error={errors.taux}
-              hint={
-                form.devise !== 'MAD'
-                  ? `Auto-rempli : ${form.type === 'ACHAT' ? 'taux achat' : form.type === 'VENTE' ? 'taux vente' : 'taux jour'}`
-                  : 'MAD → taux 1'
-              }
-            >
-              <Input
-                type="number"
-                step="0.0001"
-                min="0.0001"
-                value={form.taux}
+            <Field label={tauxLabel(form.type)} error={errors.taux}
+              hint={form.devise !== 'MAD' ? `Auto-rempli : ${form.type === 'ACHAT' ? 'taux achat' : form.type === 'VENTE' ? 'taux vente' : 'taux jour'}` : 'MAD → taux 1'}>
+              <Input type="number" step="0.0001" min="0.0001" value={form.taux}
                 onChange={(e) => set('taux', e.target.value)}
-                className={errors.taux ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''}
-              />
+                className={errors.taux ? 'border-red-400 bg-red-50 focus:ring-red-400' : ''} />
             </Field>
 
-            <Field
-              label={form.type === 'VENTE' ? 'Montant de vente (MAD)' : 'Montant en MAD'}
-              hint="Prix vente × quantité (devise)"
-            >
+            <Field label={form.type === 'VENTE' ? 'Montant de vente (MAD)' : 'Montant en MAD'} hint="Prix × quantité">
               <div className="relative">
-                <Input
-                  type="text"
-                  readOnly
-                  value={hasMAD ? formatMontantFr(montantMADNum) : '—'}
-                  className="cursor-default border-zinc-200 bg-zinc-50 text-right font-bold tabular-nums text-zinc-900 focus:ring-0"
-                />
-                <Calculator
-                  size={12}
-                  className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400"
-                />
+                <Input type="text" readOnly value={hasMAD ? formatMontantFr(montantMADNum) : '—'}
+                  className="cursor-default border-zinc-200 bg-zinc-50 text-right font-bold tabular-nums text-zinc-900 focus:ring-0" />
+                <Calculator size={12} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400" />
               </div>
             </Field>
 
+            {/* ── VENTE : montant payé ── */}
             {form.type === 'VENTE' && (
               <>
-                <Field
-                  label="Montant payé (MAD)"
-                  error={errors.montantAPayer}
-                  hint="Par défaut = vente — réduire si partiel"
-                >
+                <Field label="Montant payé (MAD)" error={errors.montantAPayer} hint="Par défaut = vente — réduire si partiel">
                   <div className="flex gap-1.5">
-                    <Input
-                      type="text"
-                      inputMode="decimal"
-                      value={form.montantAPayer}
-                      onChange={(e) => {
-                        payeDirty.current = true;
-                        set('montantAPayer', e.target.value);
-                      }}
-                      onBlur={() => {
-                        if (form.montantAPayer.trim() === '') {
-                          payeDirty.current = true;
-                          set('montantAPayer', formatMontantFr(0));
-                        }
-                      }}
-                      className={
-                        errors.montantAPayer
-                          ? 'min-w-0 flex-1 border-red-400 bg-red-50 text-right text-sm font-bold tabular-nums text-zinc-900 focus:ring-red-400'
-                          : 'min-w-0 flex-1 bg-white text-right text-sm font-bold tabular-nums text-zinc-900'
-                      }
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={!hasMAD}
-                      onClick={applyPaiementCompletVente}
-                      className="shrink-0 px-2 text-[10px] font-semibold"
-                      title="Paiement total — statut PAYÉ"
-                    >
+                    <Input type="text" inputMode="decimal" value={form.montantAPayer}
+                      onChange={(e) => { payeDirty.current = true; set('montantAPayer', e.target.value); }}
+                      onBlur={() => { if (form.montantAPayer.trim() === '') { payeDirty.current = true; set('montantAPayer', formatMontantFr(0)); } }}
+                      className={errors.montantAPayer
+                        ? 'min-w-0 flex-1 border-red-400 bg-red-50 text-right text-sm font-bold tabular-nums text-zinc-900 focus:ring-red-400'
+                        : 'min-w-0 flex-1 bg-white text-right text-sm font-bold tabular-nums text-zinc-900'} />
+                    <Button type="button" variant="outline" size="sm" disabled={!hasMAD}
+                      onClick={applyPaiementCompletVente} className="shrink-0 px-2 text-[10px] font-semibold" title="Paiement total">
                       Complet
                     </Button>
                   </div>
                 </Field>
-                <Field
-                  label="Reste non payé (MAD)"
-                  hint="Vente − payé"
-                >
-                  <Input
-                    type="text"
-                    readOnly
-                    value={resteNonPayeAffiche === '' ? '—' : resteNonPayeAffiche}
-                    className="cursor-default border-zinc-200 bg-zinc-50 text-right text-sm font-bold tabular-nums text-zinc-900 focus:ring-0"
-                  />
+                <Field label="Reste non payé (MAD)" hint="Vente − payé">
+                  <Input type="text" readOnly value={resteNonPayeAffiche === '' ? '—' : resteNonPayeAffiche}
+                    className="cursor-default border-zinc-200 bg-zinc-50 text-right text-sm font-bold tabular-nums text-zinc-900 focus:ring-0" />
                 </Field>
               </>
             )}
 
-            {/* ── Section 4: Statut & paiement ── */}
+            {/* ── ACHAT : paiement partiel ── */}
+            {form.type === 'ACHAT' && (
+              <>
+                <Field label="Montant payé par client (MAD)"
+                  error={errors.montantPayeAchat}
+                  hint="Laisser vide si paiement complet — saisir si le client paie partiellement">
+                  <div className="flex gap-1.5">
+                    <Input type="text" inputMode="decimal"
+                      placeholder={hasMAD ? `Défaut : ${formatMontantFr(montantMADNum)} (complet)` : 'Ex. 40 000'}
+                      value={form.montantPayeAchat}
+                      onChange={(e) => set('montantPayeAchat', e.target.value)}
+                      className={errors.montantPayeAchat
+                        ? 'min-w-0 flex-1 border-red-400 bg-red-50 text-right text-sm font-bold tabular-nums text-zinc-900 focus:ring-red-400'
+                        : 'min-w-0 flex-1 bg-white text-right text-sm font-bold tabular-nums text-zinc-900'} />
+                    <Button type="button" variant="outline" size="sm" disabled={!hasMAD}
+                      onClick={applyPaiementCompletAchat} className="shrink-0 px-2 text-[10px] font-semibold">
+                      Complet
+                    </Button>
+                  </div>
+                </Field>
+
+                {achatPartiel && resteAchatAffiche && (
+                  <Field label="Reste dû par client (MAD)" hint="Ne sortira de la caisse que lors du paiement">
+                    <Input type="text" readOnly value={resteAchatAffiche}
+                      className="cursor-default border-amber-200 bg-amber-50 text-right text-sm font-bold tabular-nums text-amber-800 focus:ring-0" />
+                  </Field>
+                )}
+              </>
+            )}
+
             <SectionLabel>Statut & paiement</SectionLabel>
 
             {form.type === 'VENTE' ? (
               <Field label="Statut du solde *" error={errors.statut} hint="Automatique selon le reste">
-                <Input
-                  type="text"
-                  readOnly
-                  value={form.statut}
-                  className={`cursor-default border-zinc-200 bg-zinc-50 font-bold focus:ring-0 ${
-                    form.statut === 'PAYÉ' ? 'text-emerald-700' : 'text-red-700'
-                  }`}
-                />
+                <Input type="text" readOnly value={form.statut}
+                  className={`cursor-default border-zinc-200 bg-zinc-50 font-bold focus:ring-0 ${form.statut === 'PAYÉ' ? 'text-emerald-700' : 'text-red-700'}`} />
+              </Field>
+            ) : form.type === 'ACHAT' ? (
+              <Field label="Statut du solde *" hint="Automatique selon paiement achat">
+                <Input type="text" readOnly value={achatPartiel ? 'CRÉDIT' : 'PAYÉ'}
+                  className={`cursor-default border-zinc-200 bg-zinc-50 font-bold focus:ring-0 ${achatPartiel ? 'text-amber-700' : 'text-emerald-700'}`} />
               </Field>
             ) : (
               <>
                 <Field label="Statut *" error={errors.statut}>
-                  <NativeSelect
-                    value={form.statut}
-                    onChange={(v) => set('statut', v as TxStatut)}
-                    hasError={!!errors.statut}
-                  >
-                    {STATUTS.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
+                  <NativeSelect value={form.statut} onChange={(v) => set('statut', v as TxStatut)} hasError={!!errors.statut}>
+                    {STATUTS.map((s) => <option key={s} value={s}>{s}</option>)}
                   </NativeSelect>
                 </Field>
                 {form.statut === 'CRÉDIT' && (
                   <Field label="À payer (MAD)" hint="Montant restant dû pour ce crédit">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="Ex. 1 150,00"
-                      value={form.montantAPayer}
-                      onChange={(e) => set('montantAPayer', e.target.value)}
-                    />
+                    <Input type="number" step="0.01" min="0" placeholder="Ex. 1 150,00" value={form.montantAPayer}
+                      onChange={(e) => set('montantAPayer', e.target.value)} />
                   </Field>
                 )}
               </>
@@ -829,16 +700,11 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
 
             {form.type === 'DEPOT' && (
               <Field label="Bénéficiaire" hint="Optionnel">
-                <Input
-                  type="text"
-                  placeholder="Nom ou référence"
-                  value={form.beneficiaire}
-                  onChange={(e) => set('beneficiaire', e.target.value)}
-                />
+                <Input type="text" placeholder="Nom ou référence" value={form.beneficiaire}
+                  onChange={(e) => set('beneficiaire', e.target.value)} />
               </Field>
             )}
 
-            {/* ── Section 5: Identification client ── */}
             <SectionLabel>
               {hasMAD && montantMADNum >= SEUIL_IDENTIFICATION_MAD
                 ? `⚠️ Identification client (R5 — ≥ ${SEUIL_IDENTIFICATION_MAD.toLocaleString('fr-MA')} MAD)`
@@ -848,132 +714,81 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
             <Field
               label={hasMAD && montantMADNum >= SEUIL_IDENTIFICATION_MAD ? 'Client *' : 'Client'}
               error={errors.clientId}
-              hint={
-                hasMAD && montantMADNum >= SEUIL_IDENTIFICATION_MAD
-                  ? 'Obligatoire au-delà du seuil réglementaire'
-                  : 'Lier une transaction à un client enregistré'
-              }
-              className="col-span-full"
-            >
-              <ClientSelector
-                value={form.clientId}
-                onChange={(id) => {
-                  set('clientId', id);
-                }}
-                hasError={!!errors.clientId}
-                required={hasMAD && montantMADNum >= SEUIL_IDENTIFICATION_MAD}
-              />
+              hint={hasMAD && montantMADNum >= SEUIL_IDENTIFICATION_MAD ? 'Obligatoire au-delà du seuil réglementaire' : 'Lier une transaction à un client enregistré'}
+              className="col-span-full">
+              <ClientSelector value={form.clientId} onChange={(id) => set('clientId', id)}
+                hasError={!!errors.clientId} required={hasMAD && montantMADNum >= SEUIL_IDENTIFICATION_MAD} />
             </Field>
           </div>
 
-          {/* ── Section 5: Libellé & Note ── */}
           <div className="mt-1 border-b border-zinc-100 pb-1 pt-2">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">
-              Libellé & note
-            </span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Libellé & note</span>
           </div>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <Field
-              label="Opération * (libellé synthétique)"
-              hint="Auto-rempli — modifiable (ex. : « Achat EUR 500 — client Ahmed »)"
-            >
-              <textarea
-                rows={2}
-                placeholder="Ex. Vente EUR 300 — client vitrine"
-                value={form.operation}
-                onChange={(e) => {
-                  opDirty.current = true;
-                  set('operation', e.target.value);
-                }}
-                className="flex w-full resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900
-                  placeholder:text-zinc-400 shadow-sm
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+            <Field label="Opération * (libellé synthétique)" hint="Auto-rempli — modifiable">
+              <textarea rows={2} placeholder="Ex. Vente EUR 300 — client vitrine" value={form.operation}
+                onChange={(e) => { opDirty.current = true; set('operation', e.target.value); }}
+                className="flex w-full resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
             </Field>
-
             <Field label="Note" hint="Optionnel — contrepartie, détail crédit, remarque">
-              <textarea
-                rows={2}
-                placeholder="Contrepartie, détail, numéro de bon…"
-                value={form.note}
+              <textarea rows={2} placeholder="Contrepartie, détail, numéro de bon…" value={form.note}
                 onChange={(e) => set('note', e.target.value)}
-                className="flex w-full resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900
-                  placeholder:text-zinc-400 shadow-sm
-                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+                className="flex w-full resize-none rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
             </Field>
           </div>
 
-          {/* ── Résumé avant envoi ── */}
+          {/* Résumé */}
           {hasMAD && form.montant && form.devise && (
-            <div className="mt-4 flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-2.5 text-sm">
-              <span className="font-medium text-blue-800">
-                {TYPE_OPERATION_LABEL[form.type]}
-              </span>
-              <span className="text-blue-600">
-                {parseFloat(form.montant).toLocaleString('fr-MA')} {form.devise}
-              </span>
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg border border-blue-100 bg-blue-50 px-4 py-2.5 text-sm">
+              <span className="font-medium text-blue-800">{TYPE_OPERATION_LABEL[form.type]}</span>
+              <span className="text-blue-600">{parseFloat(form.montant).toLocaleString('fr-MA')} {form.devise}</span>
               <span className="text-zinc-400">×</span>
               <span className="text-blue-600">{fmtRate(parseFloat(form.taux) || 0)}</span>
               <span className="text-zinc-400">=</span>
-              <span className="font-bold text-blue-900">
-                {montantMADNum.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
-              </span>
+              <span className="font-bold text-blue-900">{montantMADNum.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD</span>
+
               {form.type === 'VENTE' && (
                 <>
                   <span className="text-zinc-400">|</span>
                   <span className="text-blue-700">
-                    Payé{' '}
-                    {(form.montantAPayer.trim() === ''
-                      ? 0
-                      : parseMontantStr(form.montantAPayer)
-                    ).toLocaleString('fr-MA', { minimumFractionDigits: 2 })}{' '}
-                    MAD
+                    Payé {(form.montantAPayer.trim() === '' ? 0 : parseMontantStr(form.montantAPayer)).toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
                   </span>
                   {resteNonPayeAffiche !== '' && (
-                    <span
-                      className={
-                        montantMADNum - payeNum <= 0.001
-                          ? 'font-semibold text-emerald-800'
-                          : 'font-semibold text-red-700'
-                      }
-                    >
+                    <span className={montantMADNum - payeNum <= 0.001 ? 'font-semibold text-emerald-800' : 'font-semibold text-red-700'}>
                       Reste dû {resteNonPayeAffiche} MAD
                     </span>
                   )}
                 </>
               )}
-              <span
-                className={`ml-auto rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
-                  form.statut === 'PAYÉ'
-                    ? 'bg-emerald-100 text-emerald-800 ring-emerald-200'
-                    : form.statut === 'CRÉDIT'
-                    ? 'bg-amber-100 text-amber-800 ring-amber-200'
-                    : 'bg-red-100 text-red-800 ring-red-200'
-                }`}
-              >
-                {form.statut}
+
+              {form.type === 'ACHAT' && achatPartiel && (
+                <>
+                  <span className="text-zinc-400">|</span>
+                  <span className="text-blue-700">
+                    Payé {payeAchatNum!.toLocaleString('fr-MA', { minimumFractionDigits: 2 })} MAD
+                  </span>
+                  <span className="font-semibold text-amber-700">
+                    Reste dû {resteAchatAffiche} MAD → sera encaissé plus tard
+                  </span>
+                </>
+              )}
+
+              <span className={`ml-auto rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${
+                (achatPartiel ? 'CRÉDIT' : form.statut) === 'PAYÉ'
+                  ? 'bg-emerald-100 text-emerald-800 ring-emerald-200'
+                  : 'bg-amber-100 text-amber-800 ring-amber-200'
+              }`}>
+                {achatPartiel ? 'CRÉDIT' : form.statut}
               </span>
             </div>
           )}
 
-          {/* ── Boutons ── */}
           <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleReset}
-              className="gap-1.5 text-zinc-600"
-            >
+            <Button type="button" variant="outline" size="sm" onClick={handleReset} className="gap-1.5 text-zinc-600">
               <RotateCcw size={13} /> Réinitialiser
             </Button>
-            <Button
-              type="submit"
-              size="sm"
-              className="gap-1.5 bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-            >
+            <Button type="submit" size="sm" className="gap-1.5 bg-blue-600 hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
               <Save size={13} /> Enregistrer
             </Button>
           </div>
