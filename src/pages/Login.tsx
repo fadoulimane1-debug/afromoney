@@ -5,7 +5,7 @@ import { Logo } from '@/components/Logo';
 import { useAuthContext } from '@/context/AuthContext';
 
 // ⚠️ Remplace par l'URL de ton Cloudflare Worker après déploiement
-const WORKER_URL = 'https://ancient-credit-19e4.fadoulimane1.workers.dev';
+const WORKER_URL = 'https://afromoney-otp.TON-SUBDOMAIN.workers.dev';
 
 interface FormErrors {
   email?: string;
@@ -93,7 +93,7 @@ export function Login() {
 
     // Credentials OK → envoyer OTP
     try {
-      const res = await fetch(`${WORKER_URL}/send-otp`, { method: 'POST' });
+      const res = await fetch(`${WORKER_URL}/send-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
       if (!res.ok) throw new Error('Erreur envoi SMS');
       setStep('otp');
       setResendCooldown(60);
@@ -115,7 +115,7 @@ export function Login() {
       const res = await fetch(`${WORKER_URL}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: otpCode }),
+        body: JSON.stringify({ email, code: otpCode }),
       });
       const data = await res.json();
 
