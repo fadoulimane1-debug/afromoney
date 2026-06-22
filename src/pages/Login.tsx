@@ -4,9 +4,7 @@ import { LogIn, Eye, EyeOff, CheckCircle2, ShieldCheck, MessageSquare, RotateCcw
 import { Logo } from '@/components/Logo';
 import { useAuthContext } from '@/context/AuthContext';
 // @ts-ignore
-import emailjs from 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/+esm';
-
-// ── EmailJS config ──
+import emailjs from '@emailjs/browser';
 const EMAILJS_SERVICE_ID  = 'service_r7hqb0a';
 const EMAILJS_TEMPLATE_ID = 'template_1eagmoq';
 const EMAILJS_PUBLIC_KEY  = '3EADglSyrabvBHuvW';
