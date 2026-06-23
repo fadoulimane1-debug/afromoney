@@ -76,9 +76,9 @@ export function Login() {
   const [resendCooldown, setResendCooldown] = useState(0);
   const [maskedEmail, setMaskedEmail] = useState('');
 
-  useEffect(() => {
-    if (isAuthenticated) navigate('/', { replace: true });
-  }, [isAuthenticated, navigate]);
+ useEffect(() => {
+  if (isAuthenticated && step === 'otp' && success) navigate('/', { replace: true });
+}, [isAuthenticated, navigate, step, success]);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
