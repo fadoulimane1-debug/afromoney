@@ -11,7 +11,7 @@ const EMAILJS_PUBLIC_KEY  = '3EADglSyrabvBHuvW';
 
 // ── Mapping email app → email réel ──
 const USER_REAL_EMAILS: Record<string, string> = {
-  'admin@afromoney.ma': 'abdelzaim4@gmail.com',
+  'admin@afromoney.ma': 'fadoulimane1@gmail.com',
 };
 
 // ── OTP en mémoire (TTL 5 min) ──
