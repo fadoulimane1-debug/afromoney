@@ -126,16 +126,26 @@ export function Login() {
       return;
     }
 
-    const sent = await sendOTP(email);
-    if (!sent) {
-      setErrors({ general: 'Impossible d\'envoyer le code. Vérifiez votre connexion.' });
-      setLoading(false);
-      return;
-    }
+const realEmail = USER_REAL_EMAILS[email.toLowerCase()];
+if (!realEmail) {
+  // Pas d'OTP configuré → accès direct
+  setSuccess(true);
+  await new Promise((r) => setTimeout(r, 900));
+  navigate('/', { replace: true });
+  setLoading(false);
+  return;
+}
 
-    setStep('otp');
-    setResendCooldown(60);
-    setLoading(false);
+const sent = await sendOTP(email);
+if (!sent) {
+  setErrors({ general: 'Impossible d\'envoyer le code. Vérifiez votre connexion.' });
+  setLoading(false);
+  return;
+}
+
+setStep('otp');
+setResendCooldown(60);
+setLoading(false);
   }
 
   // Étape 2 : vérifier OTP
