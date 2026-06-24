@@ -90,12 +90,20 @@ export function JourneeSnapshots() {
   const [justSaved, setJustSaved] = useState(false);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
-
-  useEffect(() => {
-    const on = () => refresh();
-    window.addEventListener('afromoney-data', on);
-    return () => window.removeEventListener('afromoney-data', on);
-  }, [refresh]);
+// ── Auto-reprise départ depuis la veille au début du jour ──
+useEffect(() => {
+  const today = dayjs().format('YYYY-MM-DD');
+  if (day !== today) return;
+  const departMap = getSnapshotMap(CAISSE_ID, today, 'DEPART');
+  const hasDepart = DEVISES_SNAPSHOT.some(
+    (d) => departMap[d] != null && departMap[d] !== 0
+  );
+  if (!hasDepart) {
+    const prev = dayjs(today).subtract(1, 'day').format('YYYY-MM-DD');
+    repriseDepartDepuisVeille(CAISSE_ID, today, prev, DEVISES_SNAPSHOT);
+    refresh();
+  }
+}, [day]);
 
   const maps = useMemo(() => {
     void tick;
