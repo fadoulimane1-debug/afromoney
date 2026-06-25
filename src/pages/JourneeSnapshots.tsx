@@ -6,6 +6,7 @@ import { PageHero } from '@/components/PageHero';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { getSnapshotMap, upsertSnapshot, replaceSnapshotsForType } from '@/lib/stageCaisse/storage';
 import {
   AlertTriangle,
   ArrowRight,
@@ -90,7 +91,8 @@ export function JourneeSnapshots() {
   const [justSaved, setJustSaved] = useState(false);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
-// ── Auto-reprise départ depuis la veille au début du jour ──
+
+// ── Auto-reprise départ depuis CLOTURE de la veille ──
 useEffect(() => {
   const today = dayjs().format('YYYY-MM-DD');
   if (day !== today) return;
@@ -100,8 +102,14 @@ useEffect(() => {
   );
   if (!hasDepart) {
     const prev = dayjs(today).subtract(1, 'day').format('YYYY-MM-DD');
-    repriseDepartDepuisVeille(CAISSE_ID, today, prev, DEVISES_SNAPSHOT);
-    refresh();
+    const clotureVeille = getSnapshotMap(CAISSE_ID, prev, 'CLOTURE');
+    const hasClotureVeille = DEVISES_SNAPSHOT.some(
+      (d) => clotureVeille[d] != null && clotureVeille[d] !== 0
+    );
+    if (hasClotureVeille) {
+      replaceSnapshotsForType(CAISSE_ID, today, 'DEPART', DEVISES_SNAPSHOT, clotureVeille);
+      refresh();
+    }
   }
 }, [day]);
 
