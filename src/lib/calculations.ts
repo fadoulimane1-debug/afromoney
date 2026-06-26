@@ -187,7 +187,7 @@ export function computeStockRestantJour(
         if (t.type === 'DEPOT') depots += t.montant;
         if (t.type === 'ACHAT') achats += t.montant;
         if (t.type === 'RETRAIT') retraits += t.montant;
-        if (t.statut === 'CRÉDIT') credits += t.montant;
+       if (t.statut === 'CRÉDIT' && t.type !== 'ACHAT') credits += t.montant;
       }
 
       for (const m of mvJ) {
@@ -405,8 +405,7 @@ export function calculRapportPourListe(
   const actives = filterTransactionsComptables(transactions);
   const totalAchats = actives
     .filter((tx) => tx.type === 'ACHAT')
-    .reduce((s, tx) => s + tx.montantMAD, 0);
-
+     .reduce((s, tx) => s + montantMadComptable(tx), 0);
   const totalVentes = actives
     .filter((tx) => tx.type === 'VENTE')
     .reduce((s, tx) => s + tx.montantMAD, 0);
