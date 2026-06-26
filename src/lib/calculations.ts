@@ -62,14 +62,20 @@ export function operationMadCaisseActif(
   return true;
 }
 
-/** Montant MAD à inclure dans bilans / caisse du jour / clôture. */
 export function montantMadComptable(
-  tx: Pick<Transaction, 'type' | 'statut' | 'devise' | 'montant' | 'montantMAD' | 'taux'>,
+  tx: Pick<Transaction, 'type' | 'statut' | 'devise' | 'montant' | 'montantMAD' | 'taux' | 'montantAPayer'>,
 ): number {
-  if (!operationMadCaisseActif(tx)) return 0;
   if (tx.type === 'DEPOT' || tx.type === 'RETRAIT') {
+    if (!operationMadCaisseActif(tx)) return 0;
     return tx.devise === 'MAD' ? tx.montant : tx.montantMAD;
   }
+  // ACHAT partiel : seul le montant payé sort de la caisse
+  if (tx.type === 'ACHAT' && tx.statut === 'CRÉDIT') {
+    return tx.montantAPayer != null && Number.isFinite(tx.montantAPayer)
+      ? tx.montantAPayer
+      : 0;
+  }
+  if (!operationMadCaisseActif(tx)) return 0;
   return tx.montantMAD;
 }
 
