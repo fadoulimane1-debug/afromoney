@@ -75,6 +75,12 @@ export function montantMadComptable(
       ? tx.montantAPayer
       : 0;
   }
+  // VENTE partielle : seul le montant payé entre en caisse
+if (tx.type === 'VENTE' && tx.statut === 'NON-PAYÉ') {
+  return tx.montantAPayer != null && Number.isFinite(tx.montantAPayer)
+    ? tx.montantAPayer
+    : 0;
+}
   if (!operationMadCaisseActif(tx)) return 0;
   return tx.montantMAD;
 }
