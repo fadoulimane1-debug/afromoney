@@ -140,13 +140,21 @@ useEffect(() => {
     setTimeout(() => setJustSaved(false), 3000);
     notify.success('Snapshots enregistrés !');
   }
-
   function handleRepriseVeille() {
-    const prev = dayjs(day).subtract(1, 'day').format('YYYY-MM-DD');
-    repriseDepartDepuisVeille(CAISSE_ID, day, prev, DEVISES_SNAPSHOT);
+  const prev = dayjs(day).subtract(1, 'day').format('YYYY-MM-DD');
+  const clotureVeille = getSnapshotMap(CAISSE_ID, prev, 'CLOTURE');
+  const hasClotureVeille = DEVISES_SNAPSHOT.some(
+    (d) => clotureVeille[d] != null && clotureVeille[d] !== 0
+  );
+  if (hasClotureVeille) {
+    replaceSnapshotsForType(CAISSE_ID, day, 'DEPART', DEVISES_SNAPSHOT, clotureVeille);
     refresh();
-    notify.success(`Départ repris depuis le ${dayjs(prev).format('DD/MM/YYYY')}`);
+    notify.success(`Départ repris depuis la clôture du ${dayjs(prev).format('DD/MM/YYYY')}`);
+  } else {
+    notify.success('Aucune clôture trouvée pour la veille');
   }
+}
+  
 
   return (
     <div>
