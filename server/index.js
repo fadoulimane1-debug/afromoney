@@ -447,6 +447,82 @@ app.put('/api/settings/exchange-rates', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// ══════════════════════════════════════════════════════════════════════════════
+// SNAPSHOTS (solde journalier : DEPART / CLOTURE / FINAL) — /api/snapshots
+// ══════════════════════════════════════════════════════════════════════════════
+
+app.get('/api/snapshots', async (req, res) => {
+  try {
+    const database = await getDb();
+    const query = {};
+    const { caisse_id, date_comptable } = req.query;
+    if (caisse_id) query.caisse_id = Number(caisse_id);
+    if (date_comptable) query.date_comptable = date_comptable;
+
+    const rows = await database
+      .collection('snapshots')
+      .find(query)
+      .sort({ horodatage: -1 })
+      .toArray();
+
+    res.json(rows.map(serializeDoc));
+  } catch (err) {
+    console.error('[GET /api/snapshots]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Upsert d'une ligne (clé = caisse_id + date_comptable + type_solde + devise_code)
+app.put('/api/snapshots', async (req, res) => {
+  try {
+    const database = await getDb();
+    const doc = { ...req.body, updatedAt: new Date() };
+    const { caisse_id, date_comptable, type_solde, devise_code } = doc;
+    if (!caisse_id || !date_comptable || !type_solde || !devise_code) {
+      res.status(400).json({ error: 'caisse_id, date_comptable, type_solde, devise_code requis' });
+      return;
+    }
+    await database.collection('snapshots').updateOne(
+      { caisse_id, date_comptable, type_solde, devise_code },
+      { $set: doc },
+      { upsert: true },
+    );
+    const saved = await database.collection('snapshots').findOne({ caisse_id, date_comptable, type_solde, devise_code });
+    res.json(serializeDoc(saved));
+  } catch (err) {
+    console.error('[PUT /api/snapshots]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Remplace en une fois toutes les devises d'un type pour un jour donné (bulk upsert)
+app.put('/api/snapshots/bulk', async (req, res) => {
+  try {
+    const database = await getDb();
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      res.status(400).json({ error: 'rows[] requis' });
+      return;
+    }
+    const ops = rows.map((r) => ({
+      updateOne: {
+        filter: {
+          caisse_id: r.caisse_id,
+          date_comptable: r.date_comptable,
+          type_solde: r.type_solde,
+          devise_code: r.devise_code,
+        },
+        update: { $set: { ...r, updatedAt: new Date() } },
+        upsert: true,
+      },
+    }));
+    await database.collection('snapshots').bulkWrite(ops);
+    res.json({ ok: true, count: rows.length });
+  } catch (err) {
+    console.error('[PUT /api/snapshots/bulk]', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── Serializers (ObjectId → string, Date → ISO string) ────────────────────────
 
@@ -481,6 +557,10 @@ async function createIndexes(database) {
     await database.collection('transactions').createIndex({ type: 1 });
     await database.collection('transactions').createIndex({ employeId: 1 });
     await database.collection('transactions').createIndex({ annee: 1, mois: 1 });
+    await database.collection('snapshots').createIndex(
+  { caisse_id: 1, date_comptable: 1, type_solde: 1, devise_code: 1 },
+  { unique: true },
+   );
 
     // Reliquats
     await database.collection('reliquats').createIndex({ statut: 1 });
