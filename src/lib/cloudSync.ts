@@ -16,6 +16,12 @@ import {
   apiPutExchangeRates,
   type ApiTransaction,
 } from '@/lib/mongoApiClient';
+import {
+  // ...existants...
+  apiGetSnapshots,
+  apiBulkUpsertSnapshots,
+  type ApiSnapshotRow,
+} from '@/lib/mongoApiClient';
 
 function emitDataChanged() {
   if (typeof window === 'undefined') return;
