@@ -1,3 +1,6 @@
+import { useEffect } from 'react';
+import { migrateLocalToCloudIfEmpty, pullAllFromCloud } from '@/lib/cloudSync';
+import { isCloudSyncEnabled } from '@/lib/cloudConfig';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { Login } from '@/pages/Login';
@@ -34,6 +37,13 @@ function ProtectedLayout() {
 }
 
 export function App() {
+  useEffect(() => {
+  if (!isCloudSyncEnabled()) return;
+  (async () => {
+    await migrateLocalToCloudIfEmpty();
+    await pullAllFromCloud();
+  })();
+}, []);
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
