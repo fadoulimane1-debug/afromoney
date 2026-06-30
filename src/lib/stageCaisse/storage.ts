@@ -1,3 +1,4 @@
+import { cloudUpsertSnapshot, cloudBulkUpsertSnapshots } from '@/lib/cloudSync';
 import type {
   SoldeJournalierRow,
   StageOperation,
@@ -138,6 +139,7 @@ export function upsertSnapshot(
   if (idx >= 0) rows[idx] = row;
   else rows.push(row);
   saveSnapshots(rows);
+  void cloudUpsertSnapshot(row).catch((e) => console.warn('[snapshot] push cloud échoué', e));
   return row;
 }
 
@@ -170,6 +172,15 @@ export function replaceSnapshotsForType(
     });
   }
   saveSnapshots(rows);
+  const pushed = devises.map((d) => ({
+    caisse_id: caisseId,
+    date_comptable: dateComptable,
+    type_solde: type,
+    devise_code: d,
+    montant: balances[d] ?? 0,
+    horodatage: now,
+  }));
+  void cloudBulkUpsertSnapshots(pushed).catch((e) => console.warn('[snapshot] bulk push cloud échoué', e));
 }
 
 const LEGACY_MOMENT_MAP: Record<string, OperationMoment> = {
