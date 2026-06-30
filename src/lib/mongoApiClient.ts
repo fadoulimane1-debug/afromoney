@@ -198,3 +198,44 @@ export async function apiPutExchangeRates(rates: unknown[]): Promise<{ ok: boole
     body: JSON.stringify({ rates }),
   });
 }
+// ──────────────────────────────────────────────────────────────
+// Snapshots (solde journalier : DEPART / CLOTURE / FINAL)
+// ──────────────────────────────────────────────────────────────
+
+export interface ApiSnapshotRow {
+  id?: string;
+  _id?: string;
+  caisse_id: number;
+  date_comptable: string;
+  type_solde: string;
+  devise_code: string;
+  montant: number;
+  horodatage: string;
+  [key: string]: unknown;
+}
+
+export async function apiGetSnapshots(params?: {
+  caisse_id?: number;
+  date_comptable?: string;
+}): Promise<ApiSnapshotRow[]> {
+  const qs = new URLSearchParams(
+    Object.entries(params ?? {})
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [k, String(v)]),
+  ).toString();
+  return apiFetch<ApiSnapshotRow[]>(`/snapshots${qs ? `?${qs}` : ''}`);
+}
+
+export async function apiUpsertSnapshot(row: ApiSnapshotRow): Promise<ApiSnapshotRow> {
+  return apiFetch<ApiSnapshotRow>('/snapshots', {
+    method: 'PUT',
+    body: JSON.stringify(row),
+  });
+}
+
+export async function apiBulkUpsertSnapshots(rows: ApiSnapshotRow[]): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>('/snapshots/bulk', {
+    method: 'PUT',
+    body: JSON.stringify({ rows }),
+  });
+}
