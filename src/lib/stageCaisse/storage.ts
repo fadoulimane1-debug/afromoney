@@ -139,7 +139,7 @@ export function upsertSnapshot(
   if (idx >= 0) rows[idx] = row;
   else rows.push(row);
   saveSnapshots(rows);
-  void cloudUpsertSnapshot(row).catch((e) => console.warn('[snapshot] push cloud échoué', e));
+  void cloudUpsertSnapshot(row as unknown as Parameters<typeof cloudUpsertSnapshot>[0]).catch((e) => console.warn('[snapshot] push cloud échoué', e));
   return row;
 }
 
