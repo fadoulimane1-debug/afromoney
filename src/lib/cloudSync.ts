@@ -82,6 +82,7 @@ export async function pullAllFromCloud(): Promise<void> {
     apiGetClosures(),
     apiGetExchangeRates().catch(() => ({ rates: [] as ExchangeRate[] })),
   ]);
+  
 
   // Ne pas écraser le localStorage si le cloud est vide
   if (apiTxs.length === 0 && apiClosures.length === 0) return;
@@ -101,7 +102,19 @@ export async function pullAllFromCloud(): Promise<void> {
   if (rates.length > 0) {
     localStorage.setItem('exchangeRates', JSON.stringify(rates));
   }
-
+  const apiSnapshots = await apiGetSnapshots().catch(() => [] as ApiSnapshotRow[]);
+  if (apiSnapshots.length > 0) {
+    const localSnapshots = apiSnapshots.map((r) => ({
+      id: r.id ?? r._id ?? '',
+      caisse_id: r.caisse_id,
+      date_comptable: r.date_comptable,
+      type_solde: r.type_solde,
+      devise_code: r.devise_code,
+      montant: r.montant,
+      horodatage: r.horodatage,
+    }));
+    localStorage.setItem('afromoney_solde_journalier', JSON.stringify(localSnapshots));
+  }
   emitDataChanged();
 }
 
@@ -138,7 +151,14 @@ export async function migrateLocalToCloudIfEmpty(): Promise<void> {
     const rates = JSON.parse(ratesRaw) as ExchangeRate[];
     if (rates.length > 0) await apiPutExchangeRates(rates);
   }
-
+  const remoteSnapshots = await apiGetSnapshots();
+  if (remoteSnapshots.length === 0) {
+    const snapRaw = localStorage.getItem('afromoney_solde_journalier');
+    if (snapRaw) {
+      const rows = JSON.parse(snapRaw) as ApiSnapshotRow[];
+      if (rows.length > 0) await apiBulkUpsertSnapshots(rows);
+    }
+  }
   await pullAllFromCloud();
 }
 
@@ -205,4 +225,13 @@ export async function checkCloudHealth(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+export async function cloudUpsertSnapshot(row: ApiSnapshotRow): Promise<void> {
+  if (!isCloudSyncEnabled()) return;
+  await apiUpsertSnapshot(row);
+}
+
+export async function cloudBulkUpsertSnapshots(rows: ApiSnapshotRow[]): Promise<void> {
+  if (!isCloudSyncEnabled()) return;
+  await apiBulkUpsertSnapshots(rows);
 }
