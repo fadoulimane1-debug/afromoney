@@ -3,5 +3,5 @@
 buildCommand = "npm install"
 
 [deploy]
-startCommand = "npm run server"
+startCommand = "npm run start"
 restartPolicyType = "ON_FAILURE"
