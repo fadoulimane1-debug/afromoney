@@ -874,32 +874,47 @@ export function Transactions() {
                             </span>
                           </td>
                           <td className="px-3 py-2.5">
-                            {confirmDelete === tx.id ? (
-                              <div className="flex items-center gap-1.5 text-xs">
-                                <button onClick={() => handleDelete(tx.id)} className="font-medium text-red-400 hover:text-red-300">
-                                  Confirmer
-                                </button>
-                                <span className="text-zinc-700">|</span>
-                                <button onClick={() => setConfirmDelete(null)} className="text-zinc-500 hover:text-zinc-800">
-                                  Annuler
-                                </button>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => setEditingTx(tx)}
-                                  className="flex h-6 w-6 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-zinc-200 hover:text-blue-400"
-                                >
-                                  <Pencil size={12} />
-                                </button>
-                                <button
-                                  onClick={() => setConfirmDelete(tx.id)}
-                                  className="flex h-6 w-6 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-zinc-200 hover:text-red-400"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
-                            )}
+      {confirmDelete === tx.id ? (
+  <div className="flex items-center gap-1.5 text-xs">
+    <button onClick={() => handleDelete(tx.id)} className="font-medium text-red-400 hover:text-red-300">
+      Confirmer
+    </button>
+    <span className="text-zinc-700">|</span>
+    <button onClick={() => setConfirmDelete(null)} className="text-zinc-500 hover:text-zinc-800">
+      Annuler
+    </button>
+  </div>
+) : (
+  <div className="flex items-center gap-1">
+    {(tx.statut === 'NON-PAYÉ' || tx.statut === 'CRÉDIT') && (
+      <button
+        title="Marquer comme payé"
+        onClick={() => {
+          updateTransaction(tx.id, {
+            statut: 'PAYÉ',
+            montantAPayer: tx.montantMAD,
+          });
+          refresh();
+        }}
+        className="flex h-6 w-6 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-emerald-100 hover:text-emerald-600"
+      >
+        <CheckCircle size={12} />
+      </button>
+    )}
+    <button
+      onClick={() => setEditingTx(tx)}
+      className="flex h-6 w-6 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-zinc-200 hover:text-blue-400"
+    >
+      <Pencil size={12} />
+    </button>
+    <button
+      onClick={() => setConfirmDelete(tx.id)}
+      className="flex h-6 w-6 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-zinc-200 hover:text-red-400"
+    >
+      <Trash2 size={12} />
+    </button>
+  </div>
+)}
                           </td>
                         </tr>
                       );
