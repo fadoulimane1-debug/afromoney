@@ -333,11 +333,14 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
     if (form.type !== 'ACHAT') return;
     const mad = parseMontantStr(form.montantMAD);
     if (!Number.isFinite(mad) || mad <= 0) return;
-    if (form.montantPayeAchat.trim() === '') {
-      // Pas de paiement partiel saisi → PAYÉ par défaut
-      setForm((f) => (f.statut === 'PAYÉ' ? f : { ...f, statut: 'PAYÉ' }));
-      return;
-    }
+   if (form.montantPayeAchat.trim() === '') {
+  // Pas de paiement partiel saisi → PAYÉ par défaut
+  // SAUF si le statut a été explicitement mis à NON-PAYÉ
+  if (form.statut !== 'NON-PAYÉ') {
+    setForm((f) => (f.statut === 'PAYÉ' ? f : { ...f, statut: 'PAYÉ' }));
+  }
+  return;
+}
     const paye = parseMontantStr(form.montantPayeAchat);
     if (!Number.isFinite(paye) || paye < 0) return;
     const statut: TxStatut = paye >= mad - 0.001 ? 'PAYÉ' : 'CRÉDIT';
@@ -678,10 +681,18 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
                   className={`cursor-default border-zinc-200 bg-zinc-50 font-bold focus:ring-0 ${form.statut === 'PAYÉ' ? 'text-emerald-700' : 'text-red-700'}`} />
               </Field>
             ) : form.type === 'ACHAT' ? (
-              <Field label="Statut du solde *" hint="Automatique selon paiement achat">
-                <Input type="text" readOnly value={achatPartiel ? 'CRÉDIT' : 'PAYÉ'}
-                  className={`cursor-default border-zinc-200 bg-zinc-50 font-bold focus:ring-0 ${achatPartiel ? 'text-amber-700' : 'text-emerald-700'}`} />
-              </Field>
+             <Field label="Statut du solde *" hint="Automatique si paiement partiel saisi">
+              {achatPartiel ? (
+                <Input type="text" readOnly value="CRÉDIT"
+                  className="cursor-default border-zinc-200 bg-zinc-50 font-bold text-amber-700 focus:ring-0" />
+              ) : (
+                <NativeSelect value={form.statut === 'NON-PAYÉ' ? 'NON-PAYÉ' : 'PAYÉ'}
+                  onChange={(v) => set('statut', v as TxStatut)}>
+                  <option value="PAYÉ">PAYÉ</option>
+                  <option value="NON-PAYÉ">NON-PAYÉ (client paiera plus tard)</option>
+                </NativeSelect>
+              )}
+            </Field>
             ) : (
               <>
                 <Field label="Statut *" error={errors.statut}>
