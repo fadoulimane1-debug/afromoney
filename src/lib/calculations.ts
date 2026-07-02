@@ -69,6 +69,10 @@ export function montantMadComptable(
     if (!operationMadCaisseActif(tx)) return 0;
     return tx.devise === 'MAD' ? tx.montant : tx.montantMAD;
   }
+  // ACHAT non payé : 0 MAD déduit de la caisse
+    if (tx.type === 'ACHAT' && tx.statut === 'NON-PAYÉ') {
+      return 0;
+    }
   // ACHAT partiel : seul le montant payé sort de la caisse
   if (tx.type === 'ACHAT' && tx.statut === 'CRÉDIT') {
     return tx.montantAPayer != null && Number.isFinite(tx.montantAPayer)
