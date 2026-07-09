@@ -5,12 +5,11 @@ import { NAV_STRUCTURE } from '@/components/Navbar';
 
 /** Textes fictifs — à remplacer par vos coordonnées réelles. */
 const PLACEHOLDER_ADDRESS =
-  'Adresse du bureau à compléter — ex. : avenue …, immeuble …, Casablanca';
+  'Résidence Tasnime, Californie 2, Bâtiment P, rue Hachmi Al Filali, Aïn Chok — Casablanca';
 
-const PLACEHOLDER_EMAIL = 'contact@exemple.ma';
-const PLACEHOLDER_FIXE = '+212 (0) … … … … (à compléter)';
-const PLACEHOLDER_MOBILE = '+212 (0)6 … … … … (à compléter)';
-
+const PLACEHOLDER_EMAIL = 'af.exchange0@gmail.com';
+const PLACEHOLDER_FIXE = '+212 5 22 52 09 31';
+const PLACEHOLDER_MOBILE = '+212 6 60 09 02 07';
 function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -150,7 +149,7 @@ export function AppFooter() {
           </div>
 
           <p className="order-last max-w-lg text-center text-[9px] leading-snug text-slate-500 sm:order-none sm:flex-1 sm:px-2">
-            © {new Date().getFullYear()} AFROMONEY — Données locales · Coordonnées à compléter.
+          © {new Date().getFullYear()} AF Exchange — Tous droits réservés.
           </p>
 
           <button
