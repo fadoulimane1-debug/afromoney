@@ -161,6 +161,7 @@ export const NAV_STRUCTURE: NavEntry[] = [
     ],
   },
   { kind: 'link', to: '/reports', label: 'Bilan & TCD', icon: BarChart2 },
+  { kind: 'link', to: '/benefice', label: 'Bénéfice', icon: TrendingUp },
   { kind: 'link', to: '/cotation', label: 'Cotation', icon: Calculator },
   {
     kind: 'menu',
