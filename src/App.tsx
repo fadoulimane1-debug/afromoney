@@ -26,6 +26,7 @@ import { ClientDetail } from '@/pages/ClientDetail';
 import { MouvementsCoffre } from '@/pages/MouvementsCoffre';
 import { Utilisateurs } from '@/pages/Utilisateurs';
 import { AuditTrail } from '@/pages/AuditTrail';
+import { Benefice } from '@/pages/Benefice';
 
 // Synthèse = Dashboard (ou tu peux créer une page Synthèse.tsx séparée)
 const Synthese = Dashboard;
@@ -101,6 +102,7 @@ export function App() {
         {/* ═══════════════════════════════════════════════════════════ */}
         <Route path="/parametres" element={<Parametres />} />
         <Route path="/utilisateurs" element={<Utilisateurs />} />
+        <Route path="/benefice" element={<Benefice />} />
       </Route>
       
       {/* Catch-all */}
