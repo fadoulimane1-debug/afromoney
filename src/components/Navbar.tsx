@@ -29,6 +29,7 @@ import {
   BookOpen,
   Users,
   Vault,
+  TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { hasMinRole } from '@/lib/permissions';
