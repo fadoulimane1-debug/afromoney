@@ -889,13 +889,17 @@ export function Transactions() {
     {(tx.statut === 'NON-PAYÉ' || tx.statut === 'CRÉDIT') && (
       <button
         title="Marquer comme payé"
-        onClick={() => {
-          updateTransaction(tx.id, {
-            statut: 'PAYÉ',
-            montantAPayer: tx.montantMAD,
-          });
-          refresh();
-        }}
+     onClick={() => {
+  const now = new Date();
+  updateTransaction(tx.id, {
+    statut: 'PAYÉ',
+    montantAPayer: tx.montantMAD,
+    date: now,
+    jour: now.getDate(),
+    mois: now.getMonth() + 1,
+  });
+  refresh();
+}}
         className="flex h-6 w-6 items-center justify-center rounded text-zinc-600 transition-colors hover:bg-emerald-100 hover:text-emerald-600"
       >
         <CheckCircle size={12} />
