@@ -889,14 +889,12 @@ export function Transactions() {
     {(tx.statut === 'NON-PAYÉ' || tx.statut === 'CRÉDIT') && (
       <button
         title="Marquer comme payé"
-     onClick={() => {
+ onClick={() => {
   const now = new Date();
   updateTransaction(tx.id, {
     statut: 'PAYÉ',
     montantAPayer: tx.montantMAD,
-    date: now,
-    jour: now.getDate(),
-    mois: now.getMonth() + 1,
+    datePaiement: now.toISOString().slice(0, 10),
   });
   refresh();
 }}
