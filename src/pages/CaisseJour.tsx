@@ -368,8 +368,13 @@ export function CaisseJour() {
 
   const txJour = useMemo(
     () =>
-      transactions
-        .filter((t) => dayjs(t.date).format('YYYY-MM-DD') === day)
+     transactions
+  .filter((t) => {
+    const dateEffective = (t.datePaiement && t.statut === 'PAYÉ' && t.type === 'ACHAT')
+      ? t.datePaiement
+      : dayjs(t.date).format('YYYY-MM-DD');
+    return dateEffective === day;
+  })
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
     [transactions, day]
   );
