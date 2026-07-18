@@ -67,6 +67,7 @@ export interface Transaction {
   annulationRef?: string;
   /** Pour les transactions ANNULATION : raison déclarée. */
   annulationRaison?: string;
+  datePaiement?: string | null;
 }
 
 export interface ExchangeRate {
