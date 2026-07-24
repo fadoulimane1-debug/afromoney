@@ -130,7 +130,12 @@ export function summarizeCaisseJourV8(
   day: dayjs.Dayjs = dayjs()
 ): CaisseJourV8 {
   const txJ = filterTransactionsComptables(
-    transactions.filter((t) => dayjs(t.date).isSame(day, 'day')),
+    transactions.filter((t) => {
+  const dateEffective = (t.datePaiement && t.statut === 'PAYÉ' && t.type === 'ACHAT')
+    ? t.datePaiement
+    : dayjs(t.date).format('YYYY-MM-DD');
+  return dateEffective === day.format('YYYY-MM-DD');
+})
   );
   const totalAchatsMad = sumMontantMadForType(txJ, 'ACHAT');
   const totalVentesMad = sumMontantMadForType(txJ, 'VENTE');
