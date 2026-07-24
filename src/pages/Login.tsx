@@ -46,7 +46,7 @@ const DEMO_ACCOUNTS = [
     label: 'Caissier',
     sublabel: 'caissier1@afromoney.ma',
     email: 'caissier1@afromoney.ma',
-    password: 'test2026!',
+    password: 'Test2026!',
     color: '#C41E3A',
     initials: 'CA',
   },
