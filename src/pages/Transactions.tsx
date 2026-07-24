@@ -183,15 +183,23 @@ function EditModal({ tx, onClose, onSave }: EditModalProps) {
     jour: String(tx.jour),
     mois: String(tx.mois),
   });
-
+  useEffect(() => {
+  const taux = parseFloat(form.taux);
+  if (!Number.isFinite(taux) || taux <= 0) return;
+  if (tx.type === 'DEPOT' || tx.type === 'RETRAIT') return;
+  const mad = Math.round(tx.montant * taux * 100) / 100;
+  setForm((f) => ({ ...f, montantMAD: String(mad) }));
+}, [form.taux]);
   function handleSave() {
-    const taux = parseFloat(form.taux);
+    const taux = Math.round(parseFloat(form.taux) * 10000) / 10000;
     const montantMAD = parseMontantStr(form.montantMAD);
     const montantAPayerParsed =
       form.montantAPayer.trim() === '' ? undefined : parseMontantStr(form.montantAPayer);
     const caisseDepart =
       form.caisseDepart.trim() === '' ? undefined : parseFloat(form.caisseDepart);
-    const madFinal = Number.isFinite(montantMAD) ? montantMAD : tx.montantMAD;
+ const madFinal = (tx.type === 'DEPOT' || tx.type === 'RETRAIT')
+  ? tx.montantMAD
+  : Number.isFinite(montantMAD) ? montantMAD : tx.montantMAD;
     const payeFinal =
       tx.type === 'VENTE'
         ? form.montantAPayer.trim() === ''
@@ -329,7 +337,7 @@ function EditModal({ tx, onClose, onSave }: EditModalProps) {
             <label className="text-xs font-medium text-zinc-600">Taux</label>
             <Input
               type="number"
-              step="0.0001"
+              step="0.01"
               value={form.taux}
               onChange={(e) => setForm((f) => ({ ...f, taux: e.target.value }))}
             />
