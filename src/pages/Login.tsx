@@ -11,7 +11,6 @@ const EMAILJS_PUBLIC_KEY  = '3EADglSyrabvBHuvW';
 
 // ── Mapping email app → email réel ──
 const USER_REAL_EMAILS: Record<string, string> = {
-  'admin@afromoney.ma': 'abdelzaim4@gmail.com',
   'caissier1@afromoney.ma': 'af.exchange0@gmail.com',
 };
 
