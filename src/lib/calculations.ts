@@ -195,7 +195,11 @@ export function computeStockRestantJour(
         if (t.devise !== devise) continue;
         if (t.type === 'VENTE') ventes += t.montant;
         if (t.type === 'DEPOT') depots += t.montant;
-        if (t.type === 'ACHAT') achats += t.montant;
+      if (t.type === 'ACHAT') {
+  // Si cet achat a été payé un autre jour, ne pas le compter dans le stock d'aujourd'hui
+  if (t.datePaiement && t.statut === 'PAYÉ' && t.datePaiement !== dayYmd) continue;
+  achats += t.montant;
+}
         if (t.type === 'RETRAIT') retraits += t.montant;
        if (t.statut === 'CRÉDIT' && t.type !== 'ACHAT') credits += t.montant;
       }
