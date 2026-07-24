@@ -38,7 +38,7 @@ const DEMO_ACCOUNTS = [
     label: 'Admin',
     sublabel: 'admin@afromoney.ma',
     email: 'admin@afromoney.ma',
-    password: 'adminAF',
+    password: 'Admin2026!',
     color: '#D4AF37',
     initials: 'AD',
   },
