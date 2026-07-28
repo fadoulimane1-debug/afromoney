@@ -296,10 +296,13 @@ export function TransactionForm({ onSuccess }: TransactionFormProps) {
     }
   }, [form.date]);
 
-  useEffect(() => {
-    setForm((f) => ({ ...f, taux: getDefaultTaux(f.devise, f.type) }));
-  }, [form.devise, form.type]);
-
+ useEffect(() => {
+  if (form.type === 'DEPOT' || form.type === 'RETRAIT') {
+    setForm((f) => ({ ...f, taux: '1' }));
+    return;
+  }
+  setForm((f) => ({ ...f, taux: getDefaultTaux(f.devise, f.type) }));
+}, [form.devise, form.type]);
   useEffect(() => {
     const m = parseMontantStr(form.montant);
     const t = parseMontantStr(form.taux);
