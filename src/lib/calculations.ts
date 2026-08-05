@@ -11,7 +11,7 @@ export function calculMontantMAD(montant: number, taux: number): number {
  * Valeur colonne « À payer » (MAD) : montant saisi (crédit / acompte) si présent,
  * sinon équivalent MAD de la ligne — comme sur le suivi quand la cellule n’est pas réservée au seul reste dû.
  */
-export function montantAPayerAffiche(tx: Pick<Transaction, 'montantAPayer' | 'montantMAD'>): number {
+export function montantAPayerAffiche(tx: Pick<Transaction, 'montantAPayer' | 'montantMAD'>): number {  
   if (tx.montantAPayer != null && Number.isFinite(tx.montantAPayer)) return tx.montantAPayer;
   return tx.montantMAD;
 }
