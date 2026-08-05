@@ -201,7 +201,6 @@ export function computeStockRestantJour(
         if (t.type === 'VENTE') ventes += t.montant;
         if (t.type === 'DEPOT') depots += t.montant;
       if (t.type === 'ACHAT') {
-      if (t.type === 'ACHAT') {
        achats += t.montant;
        }
         if (t.type === 'RETRAIT') retraits += t.montant;
