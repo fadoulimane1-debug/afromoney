@@ -55,6 +55,7 @@ export function transactionToApiPayload(tx: Transaction): Record<string, unknown
     jour: tx.jour,
     mois: tx.mois,
     date,
+    datePaiement: tx.datePaiement,
     caisseDepart: tx.caisseDepart,
     montantAPayer: tx.montantAPayer,
     moment: tx.moment,
