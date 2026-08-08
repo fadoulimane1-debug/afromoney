@@ -86,6 +86,7 @@ export function normalizeTransaction(raw: Record<string, unknown>): Transaction 
       raw.moment === 'MATIN' || raw.moment === 'JOURNEE' || raw.moment === 'SOIR'
         ? (raw.moment as 'MATIN' | 'JOURNEE' | 'SOIR')
         : undefined,
-    beneficiaire: raw.beneficiaire ? String(raw.beneficiaire) : undefined,
+beneficiaire: raw.beneficiaire ? String(raw.beneficiaire) : undefined,
+    datePaiement: raw.datePaiement ? String(raw.datePaiement) : undefined,
   };
 }
