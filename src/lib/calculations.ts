@@ -148,12 +148,7 @@ export function computeStockRestantJour(
   creditsPage: { date: string; devise: string; montant: number; statut: string }[] = [],
 ): StockRestantJourRow[] {
   const txJ = filterTransactionsComptables(transactions)
-  .filter((t) => {
-    const dateEffective = (t.datePaiement && t.statut === 'PAYÉ' && (t.type === 'ACHAT' || t.type === 'VENTE'))
-      ? t.datePaiement
-      : dayjs(t.date).format('YYYY-MM-DD');
-    return dateEffective === dayYmd;
-  })
+  .filter((t) => dayjs(t.date).format('YYYY-MM-DD') === dayYmd)
   .filter((t) => txMatchesMomentFilter(t, momentFilter));
 
   const mvJ = mouvements.filter(
