@@ -898,10 +898,12 @@ export function Transactions() {
       <button
         title="Marquer comme payé"
  onClick={() => {
+  const dejaPercu = tx.montantAPayer ?? 0;
+  const reste = Math.max(0, tx.montantMAD - dejaPercu);
   const now = new Date();
   updateTransaction(tx.id, {
     statut: 'PAYÉ',
-    montantAPayer: tx.montantMAD,
+    montantAPayer: dejaPercu + reste,
     datePaiement: now.toISOString().slice(0, 10),
   });
   refresh();
