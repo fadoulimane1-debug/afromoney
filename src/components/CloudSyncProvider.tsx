@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Cloud, CloudOff, Loader2 } from 'lucide-react';
 import { isCloudSyncEnabled } from '@/lib/cloudConfig';
-import {
-  checkCloudHealth,
-  migrateLocalToCloudIfEmpty,
-  pullAllFromCloud,
-} from '@/lib/cloudSync';
+
 
 const SYNC_INTERVAL_MS = 45_000;
 
@@ -24,22 +20,22 @@ export function CloudSyncProvider({ children }: { children: React.ReactNode }) {
 
     let cancelled = false;
 
-    async function runSync() {
-      setStatus('syncing');
-      try {
-        const ok = await checkCloudHealth();
-        if (!ok) {
-          if (!cancelled) setStatus('error');
-          return;
-        }
-        await migrateLocalToCloudIfEmpty();
-        await pullAllFromCloud();
-        if (!cancelled) setStatus('ok');
-      } catch (e) {
-        console.error('[CloudSync]', e);
-        if (!cancelled) setStatus('error');
-      }
+async function runSync() {
+  setStatus('syncing');
+  try {
+    const ok = await checkCloudHealth();
+    if (!ok) {
+      if (!cancelled) setStatus('error');
+      return;
     }
+    // await migrateLocalToCloudIfEmpty(); // DÉSACTIVÉ TEMPORAIREMENT POUR RESET
+    await pullAllFromCloud();
+    if (!cancelled) setStatus('ok');
+  } catch (e) {
+    console.error('[CloudSync]', e);
+    if (!cancelled) setStatus('error');
+  }
+}
 
     void runSync();
     const interval = setInterval(() => void runSync(), SYNC_INTERVAL_MS);
