@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { pullAllFromCloud, isCloudSyncEnabled } from '@/lib/cloudSync';
+import { pullAllFromCloud } from '@/lib/cloudSync';
 import { isCloudSyncEnabled } from '@/lib/cloudConfig';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
