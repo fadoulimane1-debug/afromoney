@@ -41,7 +41,7 @@ export function App() {
   useEffect(() => {
   if (!isCloudSyncEnabled()) return;
   (async () => {
-    await migrateLocalToCloudIfEmpty();
+ // await migrateLocalToCloudIfEmpty(); // DÉSACTIVÉ TEMPORAIREMENT POUR RESET
     await pullAllFromCloud();
   })();
 }, []);
