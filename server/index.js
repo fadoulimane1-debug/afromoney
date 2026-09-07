@@ -199,15 +199,18 @@ app.get('/api/transactions', async (req, res) => {
 app.post('/api/transactions', async (req, res) => {
   try {
     const database = await getDb();
-    const doc = {
-      ...req.body,
-      date:      req.body.date ? new Date(req.body.date) : new Date(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    const doc = { ...req.body, updatedAt: new Date() };
+    if (doc.numero) {
+      const existing = await database.collection('transactions').findOne({ numero: doc.numero });
+      if (existing) {
+        // Déjà présente : ne pas dupliquer, renvoyer l'existante
+        res.json(serializeDoc(existing));
+        return;
+      }
+    }
+    doc.createdAt = new Date();
     const result = await database.collection('transactions').insertOne(doc);
-    const inserted = await database.collection('transactions').findOne({ _id: result.insertedId });
-    res.status(201).json(serializeTx(inserted));
+    res.json(serializeDoc({ ...doc, _id: result.insertedId }));
   } catch (err) {
     console.error('[POST /api/transactions]', err);
     res.status(500).json({ error: err.message });
