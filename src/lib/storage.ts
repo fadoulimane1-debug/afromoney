@@ -623,8 +623,9 @@ export const getMouvements = (): MouvementCaisse[] => {
   }
 };
 
-/** Calcule le solde courant d'une devise en sommant tous ses mouvements. */
-export const getSoldeDevise = (devise: string, list?: MouvementCaisse[]): number =>
+/** Calcule le solde courant d'une devise : solde de départ + somme des mouvements. */
+export const getSoldeDevise = (devise: string, list?: MouvementCaisse[], soldeDepart = 0): number =>
+  soldeDepart +
   (list ?? getMouvements())
     .filter((m) => m.devise === devise)
     .reduce((s, m) => s + m.montant, 0);
