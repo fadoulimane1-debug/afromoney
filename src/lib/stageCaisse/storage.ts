@@ -61,7 +61,7 @@ function migrateSnapshotRows(rows: SoldeJournalierRow[]): { rows: SoldeJournalie
   return { rows: Array.from(byKey.values()), changed };
 }
 
-function loadSnapshots(): SoldeJournalierRow[] {
+export function loadSnapshots(): SoldeJournalierRow[] {
   try {
     const raw = localStorage.getItem(KEY_SNAPSHOTS);
     if (!raw) return [];
