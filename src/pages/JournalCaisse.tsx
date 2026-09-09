@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PageHero } from '@/components/PageHero';
-import { getSnapshotMap } from '@/lib/stageCaisse/storage';
+import { loadSnapshots } from '@/lib/stageCaisse/storage';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
 import {
