@@ -191,13 +191,11 @@ export function JournalCaisse() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const devisesList = ['MAD', ...DEVISES.filter((d) => d !== 'MAD')];
- const allSnapshots = getSnapshotMap();
 const departParDevise: Record<string, number> = {};
-Object.values(allSnapshots)
-  .flat()
-  .filter((s: any) => s.type_solde === 'DEPART')
-  .sort((a: any, b: any) => a.date_comptable.localeCompare(b.date_comptable))
-  .forEach((s: any) => {
+loadSnapshots()
+  .filter((s) => s.type_solde === 'DEPART')
+  .sort((a, b) => a.date_comptable.localeCompare(b.date_comptable))
+  .forEach((s) => {
     if (departParDevise[s.devise_code] === undefined) {
       departParDevise[s.devise_code] = s.montant;
     }
