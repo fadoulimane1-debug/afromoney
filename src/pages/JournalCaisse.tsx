@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { PageHero } from '@/components/PageHero';
+import { getSnapshotMap } from '@/lib/stageCaisse/storage';
 import dayjs from 'dayjs';
 import 'dayjs/locale/fr';
 import {
@@ -190,7 +191,21 @@ export function JournalCaisse() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const devisesList = ['MAD', ...DEVISES.filter((d) => d !== 'MAD')];
-  const soldeCourant = Object.fromEntries(devisesList.map((d) => [d, getSoldeDevise(d, mouvements)]));
+ const allSnapshots = getSnapshotMap();
+const departParDevise: Record<string, number> = {};
+Object.values(allSnapshots)
+  .flat()
+  .filter((s: any) => s.type_solde === 'DEPART')
+  .sort((a: any, b: any) => a.date_comptable.localeCompare(b.date_comptable))
+  .forEach((s: any) => {
+    if (departParDevise[s.devise_code] === undefined) {
+      departParDevise[s.devise_code] = s.montant;
+    }
+  });
+
+const soldeCourant = Object.fromEntries(
+  devisesList.map((d) => [d, getSoldeDevise(d, mouvements, departParDevise[d] ?? 0)])
+);
   const devisesActives = devisesList.filter((d) => soldeCourant[d] !== 0);
   const totalEntrees = filtered.reduce((s, m) => s + (m.montant > 0 ? m.montant : 0), 0);
   const totalSorties = filtered.reduce((s, m) => s + (m.montant < 0 ? m.montant : 0), 0);
