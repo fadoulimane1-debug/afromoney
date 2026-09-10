@@ -202,9 +202,12 @@ loadSnapshots()
     }
   });
 
-const impactAchatVenteMad = filterTransactionsComptables(getTransactions()).reduce((acc, t) => {
+const impactTransactionsMad = filterTransactionsComptables(getTransactions()).reduce((acc, t) => {
   if (t.type === 'ACHAT') return acc - montantMadComptable(t);
   if (t.type === 'VENTE') return acc + montantMadComptable(t);
+  if (t.type === 'CHARGES') return acc - montantMadComptable(t);
+  if (t.type === 'DEPOT' && t.devise === 'MAD') return acc + montantMadComptable(t);
+  if (t.type === 'RETRAIT' && t.devise === 'MAD') return acc - montantMadComptable(t);
   return acc;
 }, 0);
 
@@ -212,7 +215,7 @@ const soldeCourant = Object.fromEntries(
   devisesList.map((d) => [
     d,
     d === 'MAD'
-      ? getSoldeDevise(d, mouvements, departParDevise[d] ?? 0) + impactAchatVenteMad
+      ? getSoldeDevise(d, mouvements, departParDevise[d] ?? 0) + impactTransactionsMad
       : getSoldeDevise(d, mouvements, departParDevise[d] ?? 0),
   ])
 );
