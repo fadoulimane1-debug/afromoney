@@ -1,4 +1,6 @@
 import type { Transaction, ExchangeRate, User, DailyClosure, Reliquat, Versement, MouvementCaisse, Client, ContexteCoffre, Role } from '../types';
+import { loadSnapshots } from '@/lib/stageCaisse/storage';
+import { montantMadComptable } from '@/lib/calculations';
 import { normalizeTransaction } from '@/lib/transactionNormalize';
 import dayjs from 'dayjs';
 import { getCaisseDepartJour } from '@/lib/caisseDepartLocal';
@@ -255,13 +257,22 @@ export const calculateStock = (
   return { totalAchete, totalVendu, stockActuel: totalAchete - totalVendu };
 };
 
-export const calculateCaisse = (): number =>
-  filterTransactionsComptables(getTransactions()).reduce((caisse, t) => {
+export const calculateCaisse = (): number => {
+  const departMad = loadSnapshots()
+    .filter((s) => s.type_solde === 'DEPART' && s.devise_code === 'MAD')
+    .sort((a, b) => a.date_comptable.localeCompare(b.date_comptable))[0]?.montant ?? 0;
+
+  const mouvementsTx = filterTransactionsComptables(getTransactions()).reduce((caisse, t) => {
+    if (t.type === 'ACHAT') return caisse - montantMadComptable(t);
+    if (t.type === 'VENTE') return caisse + montantMadComptable(t);
     if (t.type === 'DEPOT') return caisse + (t.devise === 'MAD' ? t.montant : 0);
     if (t.type === 'RETRAIT') return caisse - (t.devise === 'MAD' ? t.montant : 0);
     if (t.type === 'CHARGES') return caisse - t.montantMAD;
     return caisse;
   }, 0);
+
+  return departMad + mouvementsTx;
+};
 
 // === CLÔTURE JOURNALIÈRE ===
 
