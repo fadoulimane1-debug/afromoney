@@ -5,7 +5,7 @@ import { calculStock } from '@/lib/calculations';
 import { getSoldeDevise, getTransactions, getMouvements } from '@/lib/storage';
 import { getExchangeRates } from '@/lib/storage';
 import { fmtMad, fmtDevise } from '@/lib/formatNumbers';
-
+import { loadSnapshots } from '@/lib/stageCaisse/storage';
 export type CoherenceIssue = {
   level: 'error' | 'warn' | 'info';
   code: string;
@@ -36,7 +36,16 @@ export function runCoherenceAudit(): CoherenceIssue[] {
   const all = getTransactions();
   const actives = filterTransactionsComptables(all);
   const rates = getExchangeRates();
-  const stock = calculStock(actives, rates);
+  const departParDevise: Record<string, number> = {};
+loadSnapshots()
+  .filter((s) => s.type_solde === 'DEPART')
+  .sort((a, b) => a.date_comptable.localeCompare(b.date_comptable))
+  .forEach((s) => {
+    if (departParDevise[s.devise_code] === undefined) {
+      departParDevise[s.devise_code] = s.montant;
+    }
+  });
+const stock = calculStock(actives, rates, departParDevise);
   const mouvements = getMouvements();
 
   const annulees = all.filter(
