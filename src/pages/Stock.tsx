@@ -118,15 +118,19 @@ export function Stock() {
 const stockByDevise = useMemo(() => {
     const map = new Map<string, { achete: number; vendu: number }>();
 
-    // ── 1. Stock initial : snapshot DEPART de la journée courante ──
-    const today = dayjs().format('YYYY-MM-DD');
-    for (const row of getAllSnapshots()) {
-      if (row.type_solde !== 'DEPART' || row.date_comptable !== today) continue;
-      if (row.devise_code === 'MAD') continue;
-      const e = map.get(row.devise_code) ?? { achete: 0, vendu: 0 };
-      e.achete += row.montant;
-      map.set(row.devise_code, e);
-    }
+  // ── 1. Stock initial : dernier snapshot DEPART connu par devise ──
+const departParDevise: Record<string, number> = {};
+getAllSnapshots()
+  .filter((row) => row.type_solde === 'DEPART' && row.devise_code !== 'MAD')
+  .sort((a, b) => a.date_comptable.localeCompare(b.date_comptable))
+  .forEach((row) => {
+    departParDevise[row.devise_code] = row.montant; // garde le dernier (le plus récent écrase)
+  });
+for (const [devise, montant] of Object.entries(departParDevise)) {
+  const e = map.get(devise) ?? { achete: 0, vendu: 0 };
+  e.achete += montant;
+  map.set(devise, e);
+}
 
     // ── 2. Transactions du jour ──
     for (const tx of txActives) {
