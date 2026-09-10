@@ -1,6 +1,5 @@
 import type { Transaction, ExchangeRate, User, DailyClosure, Reliquat, Versement, MouvementCaisse, Client, ContexteCoffre, Role } from '../types';
 import { loadSnapshots } from '@/lib/stageCaisse/storage';
-import { montantMadComptable } from '@/lib/calculations';
 import { normalizeTransaction } from '@/lib/transactionNormalize';
 import dayjs from 'dayjs';
 import { getCaisseDepartJour } from '@/lib/caisseDepartLocal';
