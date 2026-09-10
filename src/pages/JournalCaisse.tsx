@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { getMouvements, getSoldeDevise, appendAlimentation, appendPrelevement, getCurrentUser, getTransactions } from '@/lib/storage';
+import { filterTransactionsComptables } from '@/lib/transactionFilters';
+import { montantMadComptable } from '@/lib/calculations';
 import { PageHero } from '@/components/PageHero';
 import { loadSnapshots } from '@/lib/stageCaisse/storage';
 import dayjs from 'dayjs';
@@ -14,9 +17,7 @@ import Papa from 'papaparse';
 import { DEVISES } from '@/lib/constants';
 import { fmt } from '@/lib/formatNumbers';
 import type { MouvementCaisse, MouvementType } from '@/types';
-import {
-  getMouvements, getSoldeDevise, appendAlimentation, appendPrelevement, getCurrentUser,
-} from '@/lib/storage';
+
 
 dayjs.locale('fr');
 
@@ -201,8 +202,19 @@ loadSnapshots()
     }
   });
 
+const impactAchatVenteMad = filterTransactionsComptables(getTransactions()).reduce((acc, t) => {
+  if (t.type === 'ACHAT') return acc - montantMadComptable(t);
+  if (t.type === 'VENTE') return acc + montantMadComptable(t);
+  return acc;
+}, 0);
+
 const soldeCourant = Object.fromEntries(
-  devisesList.map((d) => [d, getSoldeDevise(d, mouvements, departParDevise[d] ?? 0)])
+  devisesList.map((d) => [
+    d,
+    d === 'MAD'
+      ? getSoldeDevise(d, mouvements, departParDevise[d] ?? 0) + impactAchatVenteMad
+      : getSoldeDevise(d, mouvements, departParDevise[d] ?? 0),
+  ])
 );
   const devisesActives = devisesList.filter((d) => soldeCourant[d] !== 0);
   const totalEntrees = filtered.reduce((s, m) => s + (m.montant > 0 ? m.montant : 0), 0);
