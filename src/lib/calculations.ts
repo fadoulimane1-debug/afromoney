@@ -344,7 +344,11 @@ export function stockRestantDevisePourJour(
   return departByDevise[devise] ?? 0;
 }
 
-export function calculStock(transactions: Transaction[], rates: ExchangeRate[]): Stock[] {
+export function calculStock(
+  transactions: Transaction[],
+  rates: ExchangeRate[],
+  departParDevise?: Record<string, number>,
+): Stock[] {
   const actives = filterTransactionsComptables(transactions);
   const rateMap = new Map<string, number>(
     rates.map((r) => [r.devise, r.tauxJour])
@@ -363,7 +367,8 @@ export function calculStock(transactions: Transaction[], rates: ExchangeRate[]):
 
   return Array.from(stockMap.entries()).map(([devise, { achete, vendu }]) => {
     const taux = rateMap.get(devise) ?? TAUX_PAR_DEFAUT[devise] ?? 1;
-    const stockActuel = achete - vendu;
+    const depart = departParDevise?.[devise] ?? 0;
+    const stockActuel = depart + achete - vendu;
     return {
       devise,
       totalAchete: achete,
