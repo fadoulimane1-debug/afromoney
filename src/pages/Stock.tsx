@@ -124,7 +124,9 @@ getAllSnapshots()
   .filter((row) => row.type_solde === 'DEPART' && row.devise_code !== 'MAD')
   .sort((a, b) => a.date_comptable.localeCompare(b.date_comptable))
   .forEach((row) => {
-    departParDevise[row.devise_code] = row.montant; // garde le dernier (le plus récent écrase)
+    if (departParDevise[row.devise_code] === undefined) {
+      departParDevise[row.devise_code] = row.montant; // garde le PREMIER connu (chronologique)
+    }
   });
 for (const [devise, montant] of Object.entries(departParDevise)) {
   const e = map.get(devise) ?? { achete: 0, vendu: 0 };
