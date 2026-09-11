@@ -65,10 +65,11 @@ export function operationMadCaisseActif(
 export function montantMadComptable(
   tx: Pick<Transaction, 'type' | 'statut' | 'devise' | 'montant' | 'montantMAD' | 'taux' | 'montantAPayer'>,
 ): number {
-  if (tx.type === 'DEPOT' || tx.type === 'RETRAIT') {
-    if (!operationMadCaisseActif(tx)) return 0;
-    return tx.devise === 'MAD' ? tx.montant : tx.montantMAD;
-  }
+ if (tx.type === 'DEPOT' || tx.type === 'RETRAIT') {
+  if (tx.devise !== 'MAD') return 0; // dépôt/retrait de devise étrangère = mouvement physique, jamais de MAD
+  if (!operationMadCaisseActif(tx)) return 0;
+  return tx.montant;
+}
   // ACHAT non payé : 0 MAD déduit de la caisse
     if (tx.type === 'ACHAT' && tx.statut === 'NON-PAYÉ') {
       return 0;
