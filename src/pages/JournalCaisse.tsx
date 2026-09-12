@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getMouvements, getSoldeDevise, appendAlimentation, appendPrelevement, getCurrentUser, getTransactions } from '@/lib/storage';
-import { filterTransactionsComptables } from '@/lib/transactionFilters';
-import { montantMadComptable } from '@/lib/calculations';
+import { getMouvements, getSoldeDevise, appendAlimentation, appendPrelevement, getCurrentUser } from '@/lib/storage';
 import { PageHero } from '@/components/PageHero';
 import { loadSnapshots } from '@/lib/stageCaisse/storage';
 import dayjs from 'dayjs';
