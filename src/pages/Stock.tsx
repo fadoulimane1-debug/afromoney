@@ -128,17 +128,6 @@ const stockByDevise = useMemo(() => {
   return map;
 }, [txActives]);
 
-const stockByDevise = useMemo(() => {
-  const map = new Map<string, { achete: number; vendu: number }>();
-  const snapshots = getAllSnapshots();
-
-  for (const devise of DEVISES) {
-    if (devise === 'MAD') continue;
-    const solde = calculStockDepuisDernierDepart(txActives, devise, snapshots);
-    map.set(devise, { achete: solde, vendu: 0 });
-  }
-  return map;
-}, [txActives]);
 
   /* Recap achats/ventes du jour */
   const recapJour = useMemo(
