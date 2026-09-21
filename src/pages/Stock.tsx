@@ -128,42 +128,17 @@ const stockByDevise = useMemo(() => {
   return map;
 }, [txActives]);
 
-  // ── 1. Stock initial : dernier snapshot DEPART connu par devise ──
-const departParDevise: Record<string, number> = {};
-getAllSnapshots()
-  .filter((row) => row.type_solde === 'DEPART' && row.devise_code !== 'MAD')
-  .sort((a, b) => a.date_comptable.localeCompare(b.date_comptable))
-  .forEach((row) => {
-    if (departParDevise[row.devise_code] === undefined) {
-      departParDevise[row.devise_code] = row.montant; // garde le PREMIER connu (chronologique)
-    }
-  });
-for (const [devise, montant] of Object.entries(departParDevise)) {
-  const e = map.get(devise) ?? { achete: 0, vendu: 0 };
-  e.achete += montant;
-  map.set(devise, e);
-}
+const stockByDevise = useMemo(() => {
+  const map = new Map<string, { achete: number; vendu: number }>();
+  const snapshots = getAllSnapshots();
 
-    // ── 2. Transactions du jour ──
-    for (const tx of txActives) {
-      if (tx.devise === 'MAD') continue;
-      const e = map.get(tx.devise) ?? { achete: 0, vendu: 0 };
-      if (tx.type === 'ACHAT' || tx.type === 'DEPOT') e.achete += tx.montant;
-      if (tx.type === 'VENTE' || tx.type === 'RETRAIT') e.vendu += tx.montant;
-      map.set(tx.devise, e);
-    }
-
-    // ── 3. Alimentations et prélèvements depuis mouvements caisse ──
-    const mouvements = getMouvements();
-    for (const mv of mouvements) {
-      if (mv.devise === 'MAD') continue;
-      const e = map.get(mv.devise) ?? { achete: 0, vendu: 0 };
-      if (mv.type === 'ALIMENTATION') e.achete += Math.abs(mv.montant);
-      if (mv.type === 'PRELEVEMENT')  e.vendu  += Math.abs(mv.montant);
-      map.set(mv.devise, e);
-    }
-    return map;
-  }, [txActives]);
+  for (const devise of DEVISES) {
+    if (devise === 'MAD') continue;
+    const solde = calculStockDepuisDernierDepart(txActives, devise, snapshots);
+    map.set(devise, { achete: solde, vendu: 0 });
+  }
+  return map;
+}, [txActives]);
 
   /* Recap achats/ventes du jour */
   const recapJour = useMemo(
