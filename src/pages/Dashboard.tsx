@@ -32,6 +32,7 @@ import { AlertsPanel } from '@/components/AlertsPanel';
 import { CoherenceAuditPanel } from '@/components/CoherenceAuditPanel';
 import { calculStock } from '@/lib/calculations';
 import { fmtMad, fmtPct, fmtCompactK } from '@/lib/formatNumbers';
+import { loadSnapshots } from '@/lib/stageCaisse/storage';
 
 dayjs.locale('fr');
 
