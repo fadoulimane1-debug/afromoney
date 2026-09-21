@@ -458,3 +458,27 @@ export function calculRapportMensuel(
   );
   return calculRapportPourListe(txMois, mois);
 }
+export function calculStockDepuisDernierDepart(
+  transactions: Transaction[],
+  devise: string,
+  snapshots: { type_solde: string; devise_code: string; date_comptable: string; montant: number }[],
+): number {
+  const departsTries = snapshots
+    .filter((s) => s.type_solde === 'DEPART' && s.devise_code === devise)
+    .sort((a, b) => a.date_comptable.localeCompare(b.date_comptable));
+
+  const dernier = departsTries[departsTries.length - 1];
+  if (!dernier) return 0;
+
+  const depuisDate = dayjs(dernier.date_comptable);
+  const txDepuis = filterTransactionsComptables(transactions).filter(
+    (t) => t.devise === devise && !dayjs(t.date).isBefore(depuisDate, 'day'),
+  );
+
+  let solde = dernier.montant;
+  for (const t of txDepuis) {
+    if (t.type === 'ACHAT' || t.type === 'DEPOT') solde += t.montant;
+    if (t.type === 'VENTE' || t.type === 'RETRAIT') solde -= t.montant;
+  }
+  return solde;
+}
