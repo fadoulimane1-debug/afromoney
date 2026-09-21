@@ -4,6 +4,7 @@ import { getTransactions, getClosures, getClosureByDate, calculateDailyClosure, 
 import { calculStock } from '@/lib/calculations';
 import { filterTransactionsComptables } from '@/lib/transactionFilters';
 import { fmtMad, fmtDevise, fmtInt } from '@/lib/formatNumbers';
+import { loadSnapshots } from '@/lib/stageCaisse/storage';
 
 export type AlertLevel = 'info' | 'warning' | 'error';
 
@@ -31,7 +32,7 @@ export function computeProAlerts(): ProAlert[] {
   const today = dayjs().format('YYYY-MM-DD');
   const txs = filterTransactionsComptables(getTransactions());
   const rates = getExchangeRates();
-  const stocks = calculStock(txs, rates);
+const stocks = calculStock(txs, rates, loadSnapshots());
 
   const todayClosure = getClosureByDate(today);
   if (!todayClosure || todayClosure.status === 'DRAFT') {
