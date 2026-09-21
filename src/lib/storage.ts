@@ -257,21 +257,30 @@ export const calculateStock = (
 };
 
 export const calculateCaisse = (): number => {
-  const departMad = loadSnapshots()
+  const snapshots = loadSnapshots();
+  const departsMadTries = snapshots
     .filter((s) => s.type_solde === 'DEPART' && s.devise_code === 'MAD')
-    .sort((a, b) => a.date_comptable.localeCompare(b.date_comptable))[0]?.montant ?? 0;
+    .sort((a, b) => a.date_comptable.localeCompare(b.date_comptable));
+  const dernierMad = departsMadTries[departsMadTries.length - 1];
+  if (!dernierMad) return 0;
 
-  const mouvementsTx = filterTransactionsComptables(getTransactions()).reduce((caisse, t) => {
-    if (t.type === 'ACHAT') return caisse - montantMadComptable(t);
-    if (t.type === 'VENTE') return caisse + montantMadComptable(t);
-    if (t.type === 'DEPOT') return caisse + (t.devise === 'MAD' ? t.montant : 0);
-    if (t.type === 'RETRAIT') return caisse - (t.devise === 'MAD' ? t.montant : 0);
-    if (t.type === 'CHARGES') return caisse - t.montantMAD;
-    return caisse;
-  }, 0);
+  const depuisDate = dayjs(dernierMad.date_comptable);
+  const txDepuis = filterTransactionsComptables(getTransactions()).filter(
+    (t) => !dayjs(t.date).isBefore(depuisDate, 'day'),
+  );
 
-  return departMad + mouvementsTx;
+  let solde = dernierMad.montant;
+  for (const t of txDepuis) {
+    if (t.type === 'ACHAT') solde -= montantMadComptable(t);
+    if (t.type === 'VENTE') solde += montantMadComptable(t);
+    if (t.type === 'CHARGES') solde -= montantMadComptable(t);
+    if (t.type === 'DEPOT' && t.devise === 'MAD') solde += montantMadComptable(t);
+    if (t.type === 'RETRAIT' && t.devise === 'MAD') solde -= montantMadComptable(t);
+  }
+  return solde;
 };
+
+
 
 // === CLÔTURE JOURNALIÈRE ===
 
