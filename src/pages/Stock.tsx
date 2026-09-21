@@ -10,7 +10,6 @@ import { DEVISES, TAUX_PAR_DEFAUT } from '@/lib/constants';
 import { filterTransactionsComptables } from '@/lib/transactionFilters';
 import { calculMontantMAD } from '@/lib/calculations';
 import { fmt, fmtRate, fmtPct } from '@/lib/formatNumbers';
-import { getMouvements } from '@/lib/storage';
 import { getAllSnapshots } from '@/lib/stageCaisse/storage';
 import { calculStockDepuisDernierDepart } from '@/lib/calculations';
 
