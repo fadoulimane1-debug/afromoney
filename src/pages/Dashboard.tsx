@@ -39,7 +39,8 @@ dayjs.locale('fr');
 
 function calcStockTotal(transactions: Transaction[]): number {
   const rates = getExchangeRates();
-  return calculStock(transactions, rates).reduce((s, st) => s + st.valeurMAD, 0);
+  const snapshots = loadSnapshots();
+  return calculStock(transactions, rates, snapshots).reduce((s, st) => s + st.valeurMAD, 0);
 }
 
 function buildCaisseHistory(transactions: Transaction[]): { label: string; caisse: number }[] {
