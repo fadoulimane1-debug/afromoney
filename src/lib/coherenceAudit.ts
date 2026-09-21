@@ -45,7 +45,7 @@ loadSnapshots()
       departParDevise[s.devise_code] = s.montant;
     }
   });
-const stock = calculStock(actives, rates, departParDevise);
+const stock = calculStock(actives, rates, loadSnapshots());
   const mouvements = getMouvements();
 
   const annulees = all.filter(
