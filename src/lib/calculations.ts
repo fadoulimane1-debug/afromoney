@@ -348,32 +348,24 @@ export function stockRestantDevisePourJour(
 export function calculStock(
   transactions: Transaction[],
   rates: ExchangeRate[],
-  departParDevise?: Record<string, number>,
+  snapshots?: { type_solde: string; devise_code: string; date_comptable: string; montant: number }[],
 ): Stock[] {
   const actives = filterTransactionsComptables(transactions);
   const rateMap = new Map<string, number>(
     rates.map((r) => [r.devise, r.tauxJour])
   );
 
-  const stockMap = new Map<string, { achete: number; vendu: number }>();
+  const devisesUniques = [...new Set(actives.map((t) => t.devise))].filter((d) => d !== 'MAD');
 
-  for (const tx of actives) {
-    if (tx.devise === 'MAD') continue;
-    const entry = stockMap.get(tx.devise) ?? { achete: 0, vendu: 0 };
-    // DÉPÔT devise = entrée stock (ouverture / consignation) — même si MAD encore NON-PAYÉ
-    if (tx.type === 'ACHAT' || tx.type === 'DEPOT') entry.achete += tx.montant;
-    if (tx.type === 'VENTE' || tx.type === 'RETRAIT') entry.vendu += tx.montant;
-    stockMap.set(tx.devise, entry);
-  }
-
-  return Array.from(stockMap.entries()).map(([devise, { achete, vendu }]) => {
+  return devisesUniques.map((devise) => {
     const taux = rateMap.get(devise) ?? TAUX_PAR_DEFAUT[devise] ?? 1;
-    const depart = departParDevise?.[devise] ?? 0;
-    const stockActuel = depart + achete - vendu;
+    const stockActuel = snapshots
+      ? calculStockDepuisDernierDepart(transactions, devise, snapshots)
+      : 0;
     return {
       devise,
-      totalAchete: achete,
-      totalVendu: vendu,
+      totalAchete: 0,
+      totalVendu: 0,
       stockActuel,
       valeurMAD: calculMontantMAD(stockActuel, taux),
     };
