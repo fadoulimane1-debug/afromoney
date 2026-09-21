@@ -12,6 +12,7 @@ import { calculMontantMAD } from '@/lib/calculations';
 import { fmt, fmtRate, fmtPct } from '@/lib/formatNumbers';
 import { getMouvements } from '@/lib/storage';
 import { getAllSnapshots } from '@/lib/stageCaisse/storage';
+import { calculStockDepuisDernierDepart } from '@/lib/calculations';
 
 dayjs.locale('fr');
 
@@ -116,7 +117,16 @@ export function Stock() {
 
   /* Stock cumulé (départ snapshot + opérations valides) par devise */
 const stockByDevise = useMemo(() => {
-    const map = new Map<string, { achete: number; vendu: number }>();
+  const map = new Map<string, { achete: number; vendu: number }>();
+  const snapshots = getAllSnapshots();
+
+  for (const devise of DEVISES) {
+    if (devise === 'MAD') continue;
+    const solde = calculStockDepuisDernierDepart(txActives, devise, snapshots);
+    map.set(devise, { achete: solde, vendu: 0 });
+  }
+  return map;
+}, [txActives]);
 
   // ── 1. Stock initial : dernier snapshot DEPART connu par devise ──
 const departParDevise: Record<string, number> = {};
