@@ -63,7 +63,7 @@ export function operationMadCaisseActif(
 }
 
 export function montantMadComptable(
-  tx: Pick<Transaction, 'type' | 'statut' | 'devise' | 'montant' | 'montantMAD' | 'taux' | 'montantAPayer'>,
+  tx: Pick<Transaction, 'type' | 'statut' | 'devise' | 'montant' | 'montantMAD' | 'taux' | 'montantAPayer' | 'montantDejaCompteAvantPaiement'>,
 ): number {
  if (tx.type === 'DEPOT' || tx.type === 'RETRAIT') {
   if (tx.devise !== 'MAD') return 0; // dépôt/retrait de devise étrangère = mouvement physique, jamais de MAD
@@ -80,6 +80,15 @@ export function montantMadComptable(
       ? tx.montantAPayer
       : 0;
   }
+  // VENTE payée après un acompte partiel : ne compter que le reste (évite le double comptage)
+if (
+  tx.type === 'VENTE' &&
+  tx.statut === 'PAYÉ' &&
+  tx.montantDejaCompteAvantPaiement != null &&
+  tx.montantDejaCompteAvantPaiement > 0
+) {
+  return tx.montantMAD - tx.montantDejaCompteAvantPaiement;
+}
   // VENTE partielle : seul le montant payé entre en caisse
 if (tx.type === 'VENTE' && tx.statut === 'NON-PAYÉ') {
   return tx.montantAPayer != null && Number.isFinite(tx.montantAPayer)
