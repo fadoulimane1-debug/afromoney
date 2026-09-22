@@ -897,14 +897,14 @@ export function Transactions() {
     {(tx.statut === 'NON-PAYÉ' || tx.statut === 'CRÉDIT') && (
       <button
         title="Marquer comme payé"
- onClick={() => {
+onClick={() => {
   const dejaPercu = tx.montantAPayer ?? 0;
-  const reste = Math.max(0, tx.montantMAD - dejaPercu);
   const now = new Date();
   updateTransaction(tx.id, {
     statut: 'PAYÉ',
-    montantAPayer: dejaPercu + reste,
+    montantAPayer: tx.montantMAD,
     datePaiement: now.toISOString().slice(0, 10),
+    montantDejaCompteAvantPaiement: dejaPercu,
   });
   refresh();
 }}
