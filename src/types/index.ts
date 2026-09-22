@@ -68,6 +68,7 @@ export interface Transaction {
   /** Pour les transactions ANNULATION : raison déclarée. */
   annulationRaison?: string;
   datePaiement?: string | null;
+  montantDejaCompteAvantPaiement?: number;
 }
 
 export interface ExchangeRate {
