@@ -846,7 +846,7 @@ export function Transactions() {
                           </td>
                           <td className="px-3 py-2.5 text-xs text-zinc-600 whitespace-nowrap">
                             {dayjs(tx.date).format('DD/MM/YY')}
-                            <span className="ml-1 text-zinc-600">{dayjs(tx.date).format('HH:mm')}</span>
+                            <span className="ml-1 text-zinc-600">{dayjs(tx.date).subtract(1, 'hour').format('HH:mm')}</span>
                           </td>
                           <td className="px-3 py-2.5 text-xs text-zinc-700">{tx.employeNom ?? employeName(tx.employeId)}</td>
                           <td className="px-3 py-2.5">
